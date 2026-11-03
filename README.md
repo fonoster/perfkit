@@ -85,6 +85,51 @@ A valid file prints one line on stdout. Every error is one line on stderr,
 `perfkit validate --help` lists the accepted formats, and `perfkit --version` prints the
 perfkit version.
 
+## perfkit render
+
+```sh
+perfkit render --report <report.json> [--history <runs.json|https URL>] --out <dir>
+```
+
+Renders one run's `report.json` into the project's benchmarks site, a static site the caller
+publishes (for example under `/benchmarks` on GitHub Pages). It validates the report first, with
+the same error lines as `perfkit validate`.
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--report <file>` | The run's `report.json`. Required. |
+| `--history <file\|url>` | The published `runs.json`, as a file or an `https://` URL. A URL that answers 404 is treated as no history. Without it, this is the first run: the page has no deltas and perfkit prints `perfkit: no history: first run, deltas omitted`. |
+| `--out <dir>` | The directory to write the site into. Required. |
+
+```console
+$ npx perfkit render --report .perfkit/20261103T141210Z-bd3254a/report.json \
+    --history pages/benchmarks/runs.json --out out/benchmarks
+wrote out/benchmarks/index.html (latest: 20261103T141210Z-bd3254a)
+wrote out/benchmarks/runs/20261103T141210Z-bd3254a/index.html
+wrote out/benchmarks/runs/20261103T141210Z-bd3254a/report.json
+wrote out/benchmarks/runs.json (15 runs)
+```
+
+The output layout:
+
+- `index.html`: the latest run, the one with the newest `startedAt`. It is written only when
+  this run is the newest, so rendering an old report doesn't replace it.
+- `runs/<id>/index.html` and `runs/<id>/report.json`: this run's own page and report.
+- `runs.json`: the history, newest first, with this run inserted at its `startedAt` position. A
+  run already listed (same id) is replaced, so rendering twice is safe.
+
+Only this run's files are written: older run pages are never rewritten, so each stays as it was
+published. Each page is self-contained HTML (inline CSS, charts as inline SVG, fonts from Google
+Fonts, one small inline script for the run picker). What each section shows, and how the deltas
+pick the run they compare with, is in [docs/report-page.md](docs/report-page.md).
+
+| Exit code | Meaning |
+| :--- | :--- |
+| 0 | The site was written. |
+| 1 | Usage error, such as a missing `--out`. |
+| 2 | The report or the history is invalid, unreadable or of another schema. |
+| 3 | The history URL could not be fetched (any error but a 404). |
+
 ## Development
 
 Node 22 (`.nvmrc`).
