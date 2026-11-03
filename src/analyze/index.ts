@@ -20,6 +20,8 @@ export { createAnalyzeCapacity } from "./createAnalyzeCapacity.js";
 export {
   createAnalyzeSoak,
   MIN_COVERAGE,
+  NO_CALLS_REASON,
+  noResponseTimesReason,
   TOO_LITTLE_DATA_REASON
 } from "./createAnalyzeSoak.js";
 export { createNodeAnalyzeDeps } from "./createNodeAnalyzeDeps.js";

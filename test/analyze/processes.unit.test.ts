@@ -53,6 +53,29 @@ describe("countRestarts", () => {
     expect(countRestarts([at(0, "one", 1)], ["one", "postgres"])).to.equal(1);
   });
 
+  it("should not count connections that come and go while the server stays", () => {
+    const samples = [
+      at(0, "postgres", 10),
+      at(0, "postgres", 20),
+      at(1, "postgres", 10),
+      at(1, "postgres", 30),
+      at(2, "postgres", 10),
+      at(2, "postgres", 40),
+      at(2, "postgres", 50)
+    ];
+    expect(countRestarts(samples, ["postgres"])).to.equal(0);
+  });
+
+  it("should count a restart when none of the previous pids is left", () => {
+    const samples = [
+      at(0, "postgres", 10),
+      at(0, "postgres", 20),
+      at(1, "postgres", 60),
+      at(1, "postgres", 70)
+    ];
+    expect(countRestarts(samples, ["postgres"])).to.equal(1);
+  });
+
   it("should ignore the load generator", () => {
     const samples = [
       at(0, "one", 1),

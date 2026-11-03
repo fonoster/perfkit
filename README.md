@@ -391,13 +391,21 @@ A soak holds a fixed rate for hours to find leaks.
 - **Too little data.** When the samples after the warm-up cover less than 90% of `duration`, the
   verdict is **aborted** and no rule is checked. A short soak configured as short, such as a
   20-minute smoke run, is fine.
+- **No calls, no response times.** The verdict is **aborted** too when the uac started no call
+  after the warm-up (`no calls were placed after the warm-up`), or when SIPp left no response
+  times file for it, so the p99 can't be measured.
+- **Callees not registered.** With a register role, the uac starts only once every callee has
+  registered. When they have not within `users / 20` + 60 seconds, no call is placed and the
+  verdict is **aborted** (`only 150 of 200 callees registered within 70 s, so no call was
+  placed`).
 - **Memory growth.** For each process, the least-squares slope of its memory (RSS) in MB per
   hour. It fails at the threshold or above: 5.0 MB/h fails a 5 MB/h limit. The headline is the
   steepest process.
 - **Failed calls.** Failed % over every call after the warm-up. It fails at the threshold or
   above.
 - **Restarts.** A process whose PID changed, or that was missing from a sample, restarted once.
-  It fails above the threshold.
+  A name that matches several processes, like a database and its connections, restarted when
+  none of the PIDs of its previous sample is left. It fails above the threshold.
 
 The verdict is **failed** when any rule failed and **passed** otherwise. Also reported, never
 part of the verdict: p99 in the first and the last hour after the warm-up, the most open file

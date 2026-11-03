@@ -250,6 +250,32 @@ describe("createAnalyzeSoak", () => {
       expect(result).not.to.have.property("rules");
     });
 
+    it("should abort, not pass, a soak that placed no call after the warm-up", async () => {
+      // Act
+      const result = await analyze({ callsPerRow: 0 });
+
+      // Assert
+      expect(result).to.deep.include({
+        verdict: "aborted",
+        reason: "no calls were placed after the warm-up"
+      });
+      expect(result).not.to.have.property("rules");
+      expect(result).to.have.property("resources");
+    });
+
+    it("should abort a soak whose uac left no response times instead of reporting a p99 of 0", async () => {
+      // Act
+      const result = await analyze({ noRtt: true });
+
+      // Assert
+      expect(result).to.deep.include({
+        verdict: "aborted",
+        reason:
+          "no response times from one-soak/uac_invite.xml: SIPp wrote no uac_invite_<pid>_rtt.csv, so the p99 latency can't be measured"
+      });
+      expect(result).not.to.have.property("reported");
+    });
+
     it("should evaluate the rules of a 20-minute soak with 20 minutes of samples", async () => {
       // Act
       const result = await analyze(

@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
+import { basename } from "node:path";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import type { SoakBenchmarkResult, SoakRule } from "../schemas/index.js";
 import {
@@ -28,6 +29,13 @@ import type { AnalyzeDeps, Call } from "./types.js";
 export const MIN_COVERAGE = 0.9;
 export const TOO_LITTLE_DATA_REASON =
   "ended before 90% of the planned duration after the warm-up";
+export const NO_CALLS_REASON = "no calls were placed after the warm-up";
+
+/** The reason of a soak whose uac left no -trace_rtt file. */
+export function noResponseTimesReason(scenario: string): string {
+  const base = basename(scenario).replace(/\.xml$/i, "");
+  return `no response times from ${scenario}: SIPp wrote no ${base}_<pid>_rtt.csv, so the p99 latency can't be measured`;
+}
 
 const HOUR_MS = 3_600_000;
 
@@ -38,7 +46,9 @@ const HOUR_MS = 3_600_000;
  * Everything before the warm-up ends (meta.startedAt + warmup) is left out
  * of the rules. When the unit under test's samples after the warm-up cover
  * less than 90% of `duration`, the verdict is aborted and no rule is
- * evaluated. Otherwise the rules are, per process, memory growth (the
+ * evaluated. It is aborted too when the uac started no call after the
+ * warm-up (nothing was measured, so no rule can pass) or left no response
+ * times file (no p99 latency). Otherwise the rules are, per process, memory growth (the
  * least-squares slope of RSS in MB per hour, failing at >= the threshold),
  * failed calls (failing at >= the threshold) and restarts (failing above the
  * threshold).
@@ -112,6 +122,23 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
       : null;
     const afterWarmup = { fromMs: warmupEndMs, toMs: Number.POSITIVE_INFINITY };
     const callSums = sumStatRows(uac.rows, afterWarmup);
+    const aborted = (reason: string) => ({
+      ...base,
+      verdict: "aborted" as const,
+      reason,
+      resources
+    });
+    if (callSums.attempted === 0) return aborted(NO_CALLS_REASON);
+    const uacBase = basename(benchmark.load.uac.scenario).replace(
+      /\.xml$/i,
+      ""
+    );
+    const hasRtt = names.some(
+      (name) => name.startsWith(`${uacBase}_`) && name.endsWith("_rtt.csv")
+    );
+    if (!hasRtt) {
+      return aborted(noResponseTimesReason(benchmark.load.uac.scenario));
+    }
     const failedPct = roundTo(
       callSums.attempted > 0 ? (callSums.failed / callSums.attempted) * 100 : 0
     );

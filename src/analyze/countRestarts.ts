@@ -5,10 +5,13 @@ import type { ProcessSample } from "./types.js";
 
 /**
  * Counts restarts of the configured processes on the unit under test. The
- * sampler's ticks are the distinct sample times. For each process, a pid
- * that differs from its previous sample counts 1, and so does a tick where
- * the process is missing; a run of missing ticks counts once, and the new pid
- * it comes back with is not counted again.
+ * sampler's ticks are the distinct sample times. A name can match several
+ * processes, like a database server and its connections; it restarted when
+ * none of the pids of its previous sample is still there, so connections
+ * that come and go are not restarts while the server stays. For one process
+ * that is a pid change. A tick where the process is missing counts 1; a run
+ * of missing ticks counts once, and the pids it comes back with are not
+ * counted again.
  */
 export function countRestarts(
   samples: readonly ProcessSample[],
@@ -19,33 +22,35 @@ export function countRestarts(
     (a, b) => a - b
   );
   return processNames.reduce((total, name) => {
-    const pidAt = new Map(
-      uut
-        .filter((sample) => sample.name === name)
-        .map((sample) => [sample.tMs, sample.pid])
-    );
+    const pidsAt = uut
+      .filter((sample) => sample.name === name)
+      .reduce((map, sample) => {
+        const pids = map.get(sample.tMs) ?? new Set<number>();
+        pids.add(sample.pid);
+        return map.set(sample.tMs, pids);
+      }, new Map<number, Set<number>>());
     const { restarts } = ticks.reduce(
       (state, tick) => {
-        const pid = pidAt.get(tick);
-        if (pid === undefined) {
+        const pids = pidsAt.get(tick);
+        if (pids === undefined) {
           return {
-            previousPid: state.previousPid,
+            previous: state.previous,
             missing: true,
             restarts: state.missing ? state.restarts : state.restarts + 1
           };
         }
         const changed =
           !state.missing &&
-          state.previousPid !== undefined &&
-          state.previousPid !== pid;
+          state.previous !== undefined &&
+          ![...state.previous].some((pid) => pids.has(pid));
         return {
-          previousPid: pid,
+          previous: pids,
           missing: false,
           restarts: changed ? state.restarts + 1 : state.restarts
         };
       },
       {
-        previousPid: undefined as number | undefined,
+        previous: undefined as Set<number> | undefined,
         missing: false,
         restarts: 0
       }
