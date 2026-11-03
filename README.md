@@ -32,7 +32,16 @@ release straight from GitHub:
 npx -y github:fonoster/perfkit#vX.Y.Z validate perf/perfkit.yaml
 ```
 
-npm clones the tag, builds it (the `prepare` script) and runs the `perfkit` command. Pin the
+npm clones the tag, builds it (the `prepare` script) and runs the `perfkit` command. This needs
+npm 11 or later: npm 10.9, the npm that Node 22 ships with, fails on a git package that has a
+`prepare` script (`GitFetcher requires an Arborist constructor to pack a tarball`). With npm 10,
+run perfkit through npm 11:
+
+```sh
+npx -y npm@11 exec --yes --package=github:fonoster/perfkit#vX.Y.Z -- perfkit validate perf/perfkit.yaml
+```
+
+Pin the
 same tag everywhere a project calls perfkit, and read the release notes before moving to a new
 one: each release says what changed for `perfkit.yaml`, the report schema and the workflow
 inputs.
