@@ -24,7 +24,7 @@ benchmarks:
     narrative:
       what: The EdgePort on its own, with Echo answering every request with 200 OK. No Dispatcher, Connect or database, so this is a ceiling for EdgePort alone, not for a full deployment.
       why: The EdgePort is the only stateful piece of Routr. When it saturates, calls fail, no matter what runs behind it.
-      how: SIPp places calls (INVITE, 200, ACK, BYE after 1 s) over UDP and adds 50 calls/s every minute. The run stops at the first step where p99 reaches 50 ms or failed calls reach 0.1%.
+      how: SIPp sends SIP MESSAGE requests over UDP, starting at 50 messages/s and adding 50 every minute. The run stops at the first step where p99 MESSAGE-to-200 latency reaches 50 ms or failed requests reach 0.1%.
     uut:
       compose: edgeport-echo/compose.yaml
       processes:                  # sampled every 10 s; match is a regex on the command line
@@ -34,10 +34,10 @@ benchmarks:
       tool: sipp
       transport: udp
       port: 5060                  # the UUT's SIP port SIPp sends to; default 5060
-      uac: { scenario: edgeport-echo/uac_invite.xml }
-      hold: 1s
+      uac: { scenario: edgeport-echo/uac_message.xml }
+      unit: messages
       rate: { start: 50, step: 50, every: 60s, max: 5000 }
-    thresholds: { p99InviteToOkMs: 50, failedCallsPct: 0.1 }
+    thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1 }
   - id: one-soak
     kind: soak
     title: RoutrOne, six hours

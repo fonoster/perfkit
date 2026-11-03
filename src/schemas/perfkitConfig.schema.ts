@@ -112,7 +112,12 @@ const loadFields = {
     .max(65535, { error: "expected a port from 1 to 65535" })
     .default(5060),
   uac: uacSchema,
-  hold: durationSchema.default("0s")
+  hold: durationSchema.default("0s"),
+  // What one SIPp "call" is, as a plural noun for the page: "calls", "messages".
+  unit: z
+    .string()
+    .regex(/^[a-z]+$/, { error: "expected a lowercase plural noun" })
+    .default("calls")
 };
 
 const capacityRateSchema = z.strictObject({
@@ -154,7 +159,7 @@ const percentSchema = nonNegativeNumber.max(100, {
 });
 
 const capacityThresholdsSchema = z.strictObject({
-  p99InviteToOkMs: positiveNumber,
+  p99LatencyMs: positiveNumber,
   failedCallsPct: percentSchema
 });
 

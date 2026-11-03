@@ -24,7 +24,7 @@ export const VERDICTS = [
   "not-run"
 ] as const;
 
-export const CAPACITY_RULE_IDS = ["p99InviteToOkMs", "failedCallsPct"] as const;
+export const CAPACITY_RULE_IDS = ["p99LatencyMs", "failedCallsPct"] as const;
 
 export const SOAK_RULE_IDS = [
   "memoryGrowthMBPerHour",

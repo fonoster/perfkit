@@ -107,7 +107,9 @@ const narrativeSchema = z.strictObject({
 const baseFields = {
   id: benchmarkIdSchema,
   title: nonEmptyString,
-  narrative: narrativeSchema
+  narrative: narrativeSchema,
+  // load.unit from perfkit.yaml: what one SIPp "call" is ("calls", "messages").
+  unit: z.string().regex(/^[a-z]+$/, { error: "expected a lowercase plural noun" })
 };
 
 const ruleFields = {

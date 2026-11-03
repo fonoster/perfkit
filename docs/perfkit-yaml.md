@@ -81,6 +81,7 @@ the other kind rejects them.
 | `load.register.expires` | integer (seconds) | no | `300` | The registration lifetime. |
 | `load.uas.scenario` | path | *soak*: yes, if `uas` is set | | `load.uas` is optional, soak only: the SIPp scenario that answers calls. |
 | `load.hold` | duration | no | `0s` | How long each call stays up before BYE. |
+| `load.unit` | string | no | `calls` | What one SIPp call is, as a lowercase plural noun shown on the page (`calls`, `messages`). Copied into each report.json benchmark as `unit`. |
 | `load.rate.start` | number (calls/s) | *capacity*: yes | | The first step's rate. |
 | `load.rate.step` | number (calls/s) | *capacity*: yes | | Added at each step. |
 | `load.rate.every` | duration | *capacity*: yes | | How long each step lasts. |
@@ -95,12 +96,12 @@ Thresholds:
 
 | Field | Kind | Unit | Notes |
 | :--- | :--- | :--- | :--- |
-| `thresholds.p99InviteToOkMs` | capacity | ms | p99 time from INVITE to 200 OK. A step at or above it breaks the rule. |
+| `thresholds.p99LatencyMs` | capacity | ms | p99 time from INVITE to 200 OK. A step at or above it breaks the rule. |
 | `thresholds.failedCallsPct` | capacity, soak | % (0 to 100) | Failed calls. |
 | `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process after the warm-up. |
 | `thresholds.restarts` | soak | count | Process restarts allowed. |
 
-`capacity` requires exactly `p99InviteToOkMs` and `failedCallsPct`. `soak` requires exactly
+`capacity` requires exactly `p99LatencyMs` and `failedCallsPct`. `soak` requires exactly
 `memoryGrowthMBPerHour`, `failedCallsPct` and `restarts`.
 
 ## Routr's perfkit.yaml
@@ -144,10 +145,10 @@ benchmarks:
       tool: sipp
       transport: udp
       port: 5060                  # the UUT's SIP port SIPp sends to; default 5060
-      uac: { scenario: edgeport-echo/uac_invite.xml }
-      hold: 1s
+      uac: { scenario: edgeport-echo/uac_message.xml }
+      unit: messages
       rate: { start: 50, step: 50, every: 60s, max: 5000 }
-    thresholds: { p99InviteToOkMs: 50, failedCallsPct: 0.1 }
+    thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1 }
   - id: one-soak
     kind: soak
     title: RoutrOne, six hours

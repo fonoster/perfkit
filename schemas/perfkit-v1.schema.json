@@ -231,6 +231,11 @@
                     "type": "string",
                     "pattern": "^\\d+[smh]$"
                   },
+                  "unit": {
+                    "default": "calls",
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
+                  },
                   "rate": {
                     "type": "object",
                     "properties": {
@@ -293,7 +298,7 @@
               "thresholds": {
                 "type": "object",
                 "properties": {
-                  "p99InviteToOkMs": {
+                  "p99LatencyMs": {
                     "type": "number",
                     "exclusiveMinimum": 0
                   },
@@ -304,7 +309,7 @@
                   }
                 },
                 "required": [
-                  "p99InviteToOkMs",
+                  "p99LatencyMs",
                   "failedCallsPct"
                 ],
                 "additionalProperties": false
@@ -445,6 +450,11 @@
                     "default": "0s",
                     "type": "string",
                     "pattern": "^\\d+[smh]$"
+                  },
+                  "unit": {
+                    "default": "calls",
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
                   },
                   "register": {
                     "type": "object",
