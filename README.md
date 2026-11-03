@@ -26,7 +26,9 @@ are in [schemas/](schemas/).
 ## Prerequisites
 
 - Node 22 or later, and npm 11 to run perfkit from a git tag (see below).
-- `ssh` and `ssh-keygen` (OpenSSH) on the machine that runs `perfkit run`.
+- `ssh`, `scp` and `ssh-keygen` (OpenSSH) on the machine that runs `perfkit run` or `perfkit
+  collect`. `perfkit run --local` needs Docker instead, with host networking (on Docker Desktop,
+  turn on host networking in its settings).
 - For `perfkit run` and `perfkit sweep`, a DigitalOcean API token in `DIGITALOCEAN_TOKEN`. Create
   it with custom scopes, and grant these, under DigitalOcean's scope names:
 
@@ -114,7 +116,7 @@ perfkit version.
 
 ```sh
 perfkit run --config <perfkit.yaml> --target-version <tag> [--commit <sha>] [--benchmarks <id,id>]
-            [--out <dir>] [--detach] [--dry-run]
+            [--out <dir>] [--detach] [--dry-run] [--local]
 ```
 
 Creates the run's infrastructure on DigitalOcean, runs the benchmarks on it, and deletes it at
@@ -141,12 +143,14 @@ digest its tag had when the run started.
 | `--commit <sha>` | `git rev-parse HEAD` in the directory of the config file | The commit under test; part of the run id. Outside a git checkout it is required. |
 | `--benchmarks <id,id>` | every benchmark | Run only these benchmarks. |
 | `--out <dir>` | `.perfkit` | Where the run writes its files. |
-| `--detach` | off | Hand the run off to an agent on the droplets and exit. |
+| `--detach` | off | Return once the agent on the load generator has started; `perfkit collect` finishes the run. |
 | `--dry-run` | off | Print the plan and create nothing. Needs no token. |
+| `--local` | off | Run on this machine's Docker instead of DigitalOcean. Needs no token. |
 
 | Environment | Meaning |
 | :--- | :--- |
 | `DIGITALOCEAN_TOKEN` | Required, except with `--dry-run`. Never printed, never written to a file, `report.json` or a droplet. |
+| `PERFKIT_NAME_PREFIX` | Optional; containers and compose projects are named `<prefix>-<run id>-<what>`, `perfkit` by default. |
 | `PERFKIT_SSH_KEY` | Optional ed25519 private key, in OpenSSH format, without a passphrase. When set, the run looks its public key up in the account by fingerprint and reuses it, or registers it as `perfkit-shared`. That key is never deleted, by teardown or by sweep, so parallel runs share it. Without it, the run creates `perfkit-<run id>` for this run only and deletes it at teardown. |
 
 `--dry-run` resolves the digests on Docker Hub and prints the plan:
@@ -162,7 +166,7 @@ plan for Routr 2.31.6 (dry run, nothing created)
   images     fonoster/routr-edgeport:2.31.6@sha256:8bca…1866
              fonoster/routr-echo:2.31.6@sha256:14a4…a43f
              fonoster/routr-one:2.31.6@sha256:8433…1801
-  benchmarks edgeport-echo (capacity, up to 100 min at 50 to 5,000 calls/s)
+  benchmarks edgeport-echo (capacity, up to 100 min at 50 to 5,000 messages/s)
              one-soak (soak, 6 h 30 min)
   deleted    at the end, or by sweep after 9h
 $ echo $?
@@ -177,18 +181,73 @@ VPC, SSH key), on every exit path: success, a failed benchmark, an error, a crea
 part-way, and Ctrl-C, SIGINT or SIGTERM. DigitalOcean deletes only an empty VPC, so perfkit waits
 up to 5 minutes for the VPC's members to go before it deletes it. Each delete is tried 3 times.
 The one exception is `--detach`: once the agent on the droplets has started, the run keeps its
-droplets, and `perfkit collect` or `perfkit sweep` deletes them.
+droplets, and `perfkit collect` or `perfkit sweep` deletes them. Without `--detach`, the same
+holds while `run` follows the run: it deletes everything at the end, as `perfkit collect` does.
 
-> The benchmarks themselves are not implemented yet: until they are, a run without `--dry-run`
-> provisions, fails with `benchmarks are not implemented yet` (exit 3), and deletes everything.
+**What runs where.** Once the droplets are ready, perfkit copies the directory of `perfkit.yaml`
+to `/opt/perfkit/project` on both, and its own package (`dist/`, `package.json` and the
+production `node_modules`) to `/opt/perfkit/agent` on the load generator. It then starts the
+agent there, `perfkit agent`, as a detached `node:22-alpine` container with the Docker socket
+mounted, so the run goes on if this machine disconnects. The agent runs every benchmark in order:
+`docker compose up` of the benchmark's compose file on the UUT, a wait until every service is
+running (and healthy, with a healthcheck) for at most 5 minutes, the setup script, the samplers,
+the OpenTelemetry Collector for telemetry, and SIPp. A capacity ramp is checked step by step and
+SIPp stops at the first step that breaks a rule or doesn't count. Then `docker compose down`, and
+the next benchmark. [docs/project-setup.md](docs/project-setup.md) is what a project's compose
+files, setup script and SIPp scenarios get.
+
+Without `--detach`, `run` then follows the run like `perfkit collect` and prints its progress:
+
+```console
+$ DIGITALOCEAN_TOKEN=… npx -y github:fonoster/perfkit#v0.1.0 run --config perf/perfkit.yaml --target-version 2.31.5
+plan for Routr 2.31.5 (run 20261103T141210Z-bd3254a)
+…
+[edgeport-echo] step    50 messages/s  p99 4.1 ms  failed 0.00%  ok
+[edgeport-echo] step 1,300 messages/s  p99 62.0 ms  failed 0.05%  over the p99 limit; stopping
+[edgeport-echo] passed: limit 1,250 messages/s
+[one-soak] passed: memory one +1.8 MB/h, edgeport +0.3 MB/h, postgres +0.1 MB/h; failed calls 0.01%; restarts 0
+deleted 2 droplets, firewall, VPC, SSH key
+report .perfkit/20261103T141210Z-bd3254a/report.json  (2 of 2 benchmarks passed)
+```
+
+The run's files are in `<out>/<run id>/`: `report.json` and `raw/<benchmark id>/`, the raw
+results the verdicts come from. A benchmark left out with `--benchmarks` is in the report as
+`not-run`.
+
+**The agent's key.** The agent reaches the UUT over SSH with a key pair made for this run only:
+its public key goes into the UUT's `authorized_keys` and its private key onto the load generator,
+and both go with the droplets. Neither `DIGITALOCEAN_TOKEN` nor `PERFKIT_SSH_KEY` is ever copied
+to a droplet. Without `PERFKIT_SSH_KEY`, the run's own login key is kept in
+`~/.perfkit/runs/<run id>/` so that `perfkit collect` on this machine can log in.
+
+**`--local`.** The same run on this machine's Docker: no droplets, firewall, VPC, SSH keys or
+token. The UUT's compose project and the agent, SIPp, sampler and collector containers all run
+locally with host networking; `PERFKIT_UUT_IP` and `PERFKIT_LOADGEN_IP` are `127.0.0.1` and
+`PERFKIT_VPC_CIDR` is `127.0.0.0/8`. `report.json` says `provider: local`, with the vCPUs and
+memory of `docker info`. The run lives in `~/.perfkit/runs/<run id>/` until it is collected. Use it
+to check a project's benchmarks before a real run; its numbers are not comparable with one, and
+on an arm64 machine SIPp (amd64 only) runs emulated.
+
+```console
+$ npx -y github:fonoster/perfkit#v0.1.0 run --local --config examples/minimal/perfkit.yaml --target-version 3.7.3
+plan for Minimal 3.7.3 (local run 20261103T210141Z-bff8fc4)
+  hosts      this machine's Docker, for the server under test and the load generator
+  images     pumpagubben/sipp:3.7.3@sha256:ceef…5dd1
+  benchmarks sipp-uas (capacity, up to 4 min at 50 to 200 messages/s)
+[sipp-uas] step    50 messages/s  p99 1.0 ms  failed 0.00%  ok
+…
+[sipp-uas] passed: limit at least 200 messages/s
+removed the run's containers
+report .perfkit/20261103T210141Z-bff8fc4/report.json  (1 of 1 benchmarks passed)
+```
 
 | Exit code | Meaning |
 | :--- | :--- |
-| 0 | Ok, every benchmark passed. |
+| 0 | Ok, every benchmark passed; with `--detach`, the agent started. |
 | 1 | Report written, at least one benchmark not passed. |
-| 2 | Bad config, flags or a missing token; nothing was created. |
-| 3 | Infrastructure error; everything this run created is deleted, no report. |
-| 130 | Cancelled; everything deleted. |
+| 2 | Bad config, flags or a missing token, or a compose service without `network_mode: host`; nothing was created. |
+| 3 | Infrastructure error, or the UUT was not up within 5 minutes; everything this run created is deleted, no report. |
+| 130 | Cancelled; everything deleted. Benchmarks not finished are `aborted` (`the run was cancelled`), and the report is written if one finished. |
 
 Each error is one line on stderr:
 
@@ -196,9 +255,64 @@ Each error is one line on stderr:
 perfkit: DIGITALOCEAN_TOKEN is not set; nothing was created
 perfkit: image fonoster/routr-echo:2.31.9 not found on Docker Hub; nothing was created
 perfkit: --commit is required outside a git checkout
+perfkit: one-soak/compose.yaml: service one must use network_mode: host (Docker's UDP port publishing distorts the results); nothing was created
 perfkit: could not create droplet perfkit-20261103T141210Z-bd3254a-uut in nyc3: <DigitalOcean message>. Everything this run created was deleted.
 perfkit: could not delete droplet 512034567 (perfkit-20261103T141210Z-bd3254a-uut) after 3 attempts: <message>. Run: perfkit sweep --run 20261103T141210Z-bd3254a
 ```
+
+## perfkit collect
+
+```sh
+perfkit collect <run-id> [--wait] [--out <dir>] [--timeout <duration>]
+```
+
+Follows a run started with `--detach`, from this machine or another: it finds the droplets by the
+tag `perfkit-run-<run id>`, adds this machine's public IP to the run's firewall, prints the
+agent's progress lines, and downloads each benchmark's raw results into `<out>/<run id>/raw/` as
+soon as the benchmark is done. Once the whole run is done it writes `<out>/<run id>/report.json`,
+deletes everything and exits 0 or 1. For a `--local` run it reads `~/.perfkit/runs/<run id>/`
+instead, and has nothing to delete but containers.
+
+| Flag | Default | Meaning |
+| :--- | :--- | :--- |
+| `--wait` | off | Only wait for the run to end: never write the report, never delete. |
+| `--out <dir>` | `.perfkit` | Where the run's files go. |
+| `--timeout <duration>` | `5h50m` | Stop waiting after this, like `5h50m`, `90m` or `30s`: exit 4, nothing deleted. |
+
+It logs in with `PERFKIT_SSH_KEY`, or with the run's own key in `~/.perfkit/runs/<run id>/` on
+the machine that started the run. With neither: `perfkit: no SSH key for run <run id>; set
+PERFKIT_SSH_KEY` (exit 2). It needs `DIGITALOCEAN_TOKEN`, except for a `--local` run.
+
+```console
+$ perfkit run --config perf/perfkit.yaml --target-version 2.31.5 --detach
+run 20261103T141210Z-bd3254a started; collect it with: perfkit collect 20261103T141210Z-bd3254a
+$ perfkit collect 20261103T141210Z-bd3254a --wait --timeout 5h50m
+[one-soak] running, 3h12m of 6h30m
+$ echo $?
+4
+```
+
+- **The load generator stops responding.** When 3 reads in a row, 30 s apart, fail, every
+  benchmark without results is `aborted` (`the load generator stopped responding`), the report is
+  written and everything is deleted (exit 1). With no results at all there is no report (exit 3).
+- **The UUT stops responding.** The agent checks the UUT every 30 s; after 3 failed checks in a
+  row the benchmark is `aborted` (`the server under test stopped responding`) with the series
+  collected so far, and the agent goes on to the next one.
+- **Cancelled.** SIGINT or SIGTERM stops the agent, marks every unfinished benchmark `aborted`
+  (`the run was cancelled`), writes the report if one benchmark finished, deletes everything and
+  exits 130. During `--wait` it only exits 130.
+
+| Exit code | Meaning |
+| :--- | :--- |
+| 0 | With `--wait`, the run is done; otherwise every benchmark passed. |
+| 1 | Report written, at least one benchmark not passed. |
+| 2 | Bad flags, a missing token, or no SSH key for the run. |
+| 3 | The agent failed (for example the UUT was not up within 5 minutes), or no benchmark produced results; everything deleted unless `--wait`. |
+| 4 | The timeout passed while the run goes on; nothing was deleted. |
+| 130 | Cancelled. |
+
+For GitHub, [docs/github-workflow.md](docs/github-workflow.md) has the reusable workflow that
+splits a run across jobs.
 
 ## perfkit sweep
 
