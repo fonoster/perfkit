@@ -22,6 +22,7 @@ import {
   REPORT_FORMS,
   ROUTR_CONFIG
 } from "../fixtures.js";
+import { infraDeps } from "../infra/fakes.js";
 
 const KNOWN =
   "this perfkit reads perfkit/v1, perfkit/report/v1, perfkit/runs/v1";
@@ -47,7 +48,8 @@ async function run(args: string[], memory: Record<string, Json> = {}) {
         : stat(path).then(
             (s) => s.isFile(),
             () => false
-          )
+          ),
+    infra: infraDeps()
   });
   return { code, out: out.join(""), err: err.join("") };
 }
