@@ -1,0 +1,135 @@
+{
+  "schema": "perfkit/runs/v1",
+  "project": "Routr",
+  "runs": [
+    {
+      "id": "20261103T141210Z-bd3254a",
+      "startedAt": "2026-11-03T14:12:10Z",
+      "version": "2.31.5",
+      "commit": "bd3254a4f3e1",
+      "path": "runs/20261103T141210Z-bd3254a/",
+      "verdict": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "inconclusive": 0,
+        "aborted": 0,
+        "notRun": 0
+      },
+      "benchmarks": [
+        {
+          "id": "edgeport-echo",
+          "kind": "capacity",
+          "verdict": "passed",
+          "headline": {
+            "limitCps": 1240,
+            "p99AtLimitMs": 30.9
+          }
+        },
+        {
+          "id": "one-soak",
+          "kind": "soak",
+          "verdict": "passed",
+          "headline": {
+            "memoryGrowthMBPerHour": 1.8
+          }
+        }
+      ]
+    },
+    {
+      "id": "20261027T093002Z-36bf8f8",
+      "startedAt": "2026-10-27T09:30:02Z",
+      "version": "2.31.4",
+      "commit": "36bf8f80b7c2",
+      "path": "runs/20261027T093002Z-36bf8f8/",
+      "verdict": {
+        "total": 2,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0,
+        "aborted": 1,
+        "notRun": 1
+      },
+      "benchmarks": [
+        {
+          "id": "edgeport-echo",
+          "kind": "capacity",
+          "verdict": "aborted",
+          "headline": null
+        },
+        {
+          "id": "one-soak",
+          "kind": "soak",
+          "verdict": "not-run",
+          "headline": null
+        }
+      ]
+    },
+    {
+      "id": "20261020T100005Z-c0b54ab",
+      "startedAt": "2026-10-20T10:00:05Z",
+      "version": "2.31.3",
+      "commit": "c0b54abe09d1",
+      "path": "runs/20261020T100005Z-c0b54ab/",
+      "verdict": {
+        "total": 2,
+        "passed": 0,
+        "failed": 2,
+        "inconclusive": 0,
+        "aborted": 0,
+        "notRun": 0
+      },
+      "benchmarks": [
+        {
+          "id": "edgeport-echo",
+          "kind": "capacity",
+          "verdict": "failed",
+          "headline": {
+            "limitCps": null,
+            "p99AtLimitMs": null
+          }
+        },
+        {
+          "id": "one-soak",
+          "kind": "soak",
+          "verdict": "failed",
+          "headline": {
+            "memoryGrowthMBPerHour": 7.4
+          }
+        }
+      ]
+    },
+    {
+      "id": "20261006T120000Z-40b2bc2",
+      "startedAt": "2026-10-06T12:00:00Z",
+      "version": "2.31.0",
+      "commit": "40b2bc2534e8",
+      "path": "runs/20261006T120000Z-40b2bc2/",
+      "verdict": {
+        "total": 2,
+        "passed": 1,
+        "failed": 0,
+        "inconclusive": 1,
+        "aborted": 0,
+        "notRun": 0
+      },
+      "benchmarks": [
+        {
+          "id": "edgeport-echo",
+          "kind": "capacity",
+          "verdict": "passed",
+          "headline": {
+            "limitCps": 1140.8,
+            "p99AtLimitMs": 30.3
+          }
+        },
+        {
+          "id": "one-soak",
+          "kind": "soak",
+          "verdict": "inconclusive",
+          "headline": null
+        }
+      ]
+    }
+  ]
+}

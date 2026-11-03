@@ -1,0 +1,254 @@
+{
+  "schema": "perfkit/report/v1",
+  "project": {
+    "name": "Routr",
+    "repo": "fonoster/routr",
+    "siteUrl": "https://routr.io/benchmarks",
+    "accent": "#5FCFCE",
+    "logoSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#5FCFCE\"/></svg>",
+    "title": "How much SIP traffic Routr handles.",
+    "lead": "We run these tests after significant changes to the code, on dedicated DigitalOcean servers, one for Routr and one for the load generator. The EdgePort runs alone to find its limit; the whole stack runs for hours to catch leaks."
+  },
+  "run": {
+    "id": "20261027T093002Z-36bf8f8",
+    "version": "2.31.4",
+    "commit": "36bf8f80b7c2",
+    "startedAt": "2026-10-27T09:30:02Z",
+    "endedAt": "2026-10-27T09:34:51Z",
+    "infra": {
+      "provider": "digitalocean",
+      "region": "nyc3",
+      "uut": {
+        "size": "c-8",
+        "vcpus": 8,
+        "memoryMB": 16384
+      },
+      "loadgen": {
+        "size": "c-16",
+        "vcpus": 16,
+        "memoryMB": 32768
+      },
+      "os": "Ubuntu 24.04",
+      "docker": "27.3.1"
+    },
+    "images": {
+      "edgeport": "fonoster/routr-edgeport:2.31.4@sha256:10f98210a9321ba432cb543dc654ed765fe8760f98710a9821ba932cba43dcb5",
+      "echo": "fonoster/routr-echo:2.31.4@sha256:8833e9944faa550bb661cc772dd883ee994ffaa500bb611cc722dd833ee944ff",
+      "one": "fonoster/routr-one:2.31.4@sha256:f0c8401d9512ea623fb7340c8451d9562ea673fb7840c8951d9a62eab73fbc84"
+    },
+    "tools": {
+      "perfkit": "0.1.0",
+      "sipp": "3.7.3",
+      "otelcol": "0.112.0"
+    },
+    "command": "npx -y github:fonoster/perfkit#v0.1.0 run --config perf/perfkit.yaml --target-version 2.31.4"
+  },
+  "verdict": {
+    "total": 2,
+    "passed": 0,
+    "failed": 0,
+    "inconclusive": 0,
+    "aborted": 1,
+    "notRun": 1
+  },
+  "benchmarks": [
+    {
+      "id": "edgeport-echo",
+      "kind": "capacity",
+      "title": "EdgePort + Echo",
+      "narrative": {
+        "what": "The EdgePort on its own, with Echo answering every request with 200 OK. No Dispatcher, Connect or database, so this is a ceiling for EdgePort alone, not for a full deployment.",
+        "why": "The EdgePort is the only stateful piece of Routr. When it saturates, calls fail, no matter what runs behind it.",
+        "how": "SIPp places calls (INVITE, 200, ACK, BYE after 1 s) over UDP and adds 50 calls/s every minute. The run stops at the first step where p99 reaches 50 ms or failed calls reach 0.1%."
+      },
+      "verdict": "aborted",
+      "reason": "the server under test stopped responding",
+      "durationS": 240,
+      "tool": "SIPp 3.7.3, UDP",
+      "series": {
+        "steps": [
+          {
+            "offeredCps": 50,
+            "achievedCps": 49.6,
+            "calls": 3000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 0,
+            "failuresByReason": {},
+            "retransmissions": 6,
+            "sippCpuPct": 7,
+            "uutCpuPct": 7.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 100,
+            "achievedCps": 99.2,
+            "calls": 6000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 1,
+            "failuresByReason": {
+              "408": 1
+            },
+            "retransmissions": 12,
+            "sippCpuPct": 9,
+            "uutCpuPct": 11.1,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 150,
+            "achievedCps": 148.8,
+            "calls": 9000,
+            "p50Ms": 1.1,
+            "p95Ms": 3.2,
+            "p99Ms": 4.5,
+            "failed": 2,
+            "failuresByReason": {
+              "408": 2
+            },
+            "retransmissions": 18,
+            "sippCpuPct": 11,
+            "uutCpuPct": 14.7,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 200,
+            "achievedCps": 198.4,
+            "calls": 12000,
+            "p50Ms": 1.7,
+            "p95Ms": 4.9,
+            "p99Ms": 7,
+            "failed": 4,
+            "failuresByReason": {
+              "408": 4
+            },
+            "retransmissions": 24,
+            "sippCpuPct": 13,
+            "uutCpuPct": 18.3,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          }
+        ]
+      },
+      "resources": {
+        "processes": [
+          {
+            "name": "edgeport",
+            "samples": [
+              {
+                "t": "2026-10-27T09:30:02Z",
+                "rssMB": 1180,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-27T09:31:02Z",
+                "rssMB": 1184,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-27T09:32:02Z",
+                "rssMB": 1188,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-27T09:33:02Z",
+                "rssMB": 1192,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-27T09:34:02Z",
+                "rssMB": 1196,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-27T09:35:02Z",
+                "rssMB": 1200,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 41
+              }
+            ]
+          },
+          {
+            "name": "echo",
+            "samples": [
+              {
+                "t": "2026-10-27T09:30:02Z",
+                "rssMB": 42,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-27T09:31:02Z",
+                "rssMB": 42.1,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-27T09:32:02Z",
+                "rssMB": 42.2,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-27T09:33:02Z",
+                "rssMB": 42.3,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-27T09:34:02Z",
+                "rssMB": 42.4,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-27T09:35:02Z",
+                "rssMB": 42.5,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 12
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "one-soak",
+      "kind": "soak",
+      "title": "RoutrOne, six hours",
+      "narrative": {
+        "what": "The whole stack in one image, EdgePort plus Dispatcher, Connect, Location and the data service in one Node process, routing calls between registered agents.",
+        "why": "Leaks only show after hours. A short test can pass while memory climbs until the process is killed in production.",
+        "how": "SIPp holds a steady 100 calls/s for six hours, with 200 registered callee agents, each called by its own caller agent through Connect. After a 30-minute warm-up, each process's memory may grow at most 5 MB/h."
+      },
+      "verdict": "not-run",
+      "reason": "the run was aborted before this benchmark started"
+    }
+  ]
+}

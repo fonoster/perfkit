@@ -1,0 +1,480 @@
+{
+  "schema": "perfkit/report/v1",
+  "project": {
+    "name": "Routr",
+    "repo": "fonoster/routr",
+    "siteUrl": "https://routr.io/benchmarks",
+    "accent": "#5FCFCE",
+    "logoSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#5FCFCE\"/></svg>",
+    "title": "How much SIP traffic Routr handles.",
+    "lead": "We run these tests after significant changes to the code, on dedicated DigitalOcean servers, one for Routr and one for the load generator. The EdgePort runs alone to find its limit; the whole stack runs for hours to catch leaks."
+  },
+  "run": {
+    "id": "20261020T100005Z-c0b54ab",
+    "version": "2.31.3",
+    "commit": "c0b54abe09d1",
+    "startedAt": "2026-10-20T10:00:05Z",
+    "endedAt": "2026-10-20T16:41:30Z",
+    "infra": {
+      "provider": "digitalocean",
+      "region": "nyc3",
+      "uut": {
+        "size": "c-8",
+        "vcpus": 8,
+        "memoryMB": 16384
+      },
+      "loadgen": {
+        "size": "c-16",
+        "vcpus": 16,
+        "memoryMB": 32768
+      },
+      "os": "Ubuntu 24.04",
+      "docker": "27.3.1"
+    },
+    "images": {
+      "edgeport": "fonoster/routr-edgeport:2.31.3@sha256:10f98210a9321ba432cb543dc654ed765fe8760f98710a9821ba932cba43dcb5",
+      "echo": "fonoster/routr-echo:2.31.3@sha256:8833e9944faa550bb661cc772dd883ee994ffaa500bb611cc722dd833ee944ff",
+      "one": "fonoster/routr-one:2.31.3@sha256:f0c8401d9512ea623fb7340c8451d9562ea673fb7840c8951d9a62eab73fbc84"
+    },
+    "tools": {
+      "perfkit": "0.1.0",
+      "sipp": "3.7.3",
+      "otelcol": "0.112.0"
+    },
+    "command": "npx -y github:fonoster/perfkit#v0.1.0 run --config perf/perfkit.yaml --target-version 2.31.3"
+  },
+  "verdict": {
+    "total": 2,
+    "passed": 0,
+    "failed": 2,
+    "inconclusive": 0,
+    "aborted": 0,
+    "notRun": 0
+  },
+  "benchmarks": [
+    {
+      "id": "edgeport-echo",
+      "kind": "capacity",
+      "title": "EdgePort + Echo",
+      "narrative": {
+        "what": "The EdgePort on its own, with Echo answering every request with 200 OK. No Dispatcher, Connect or database, so this is a ceiling for EdgePort alone, not for a full deployment.",
+        "why": "The EdgePort is the only stateful piece of Routr. When it saturates, calls fail, no matter what runs behind it.",
+        "how": "SIPp places calls (INVITE, 200, ACK, BYE after 1 s) over UDP and adds 50 calls/s every minute. The run stops at the first step where p99 reaches 50 ms or failed calls reach 0.1%."
+      },
+      "verdict": "failed",
+      "reason": null,
+      "durationS": 60,
+      "tool": "SIPp 3.7.3, UDP",
+      "rules": [
+        {
+          "id": "p99InviteToOkMs",
+          "limit": 50,
+          "measured": 72,
+          "passed": false
+        },
+        {
+          "id": "failedCallsPct",
+          "limit": 0.1,
+          "measured": 0.03,
+          "passed": true
+        }
+      ],
+      "headline": {
+        "limitCps": null,
+        "limitIsLowerBound": false,
+        "p99AtLimitMs": null,
+        "p50AtLimitMs": null,
+        "failedAtLimitPct": null,
+        "retransmissionsAtLimitPct": null
+      },
+      "stoppedBy": {
+        "offeredCps": 50,
+        "rule": "p99InviteToOkMs",
+        "measured": 72,
+        "limit": 50
+      },
+      "series": {
+        "steps": [
+          {
+            "offeredCps": 50,
+            "achievedCps": 49.6,
+            "calls": 3000,
+            "p50Ms": 18,
+            "p95Ms": 50.4,
+            "p99Ms": 72,
+            "failed": 1,
+            "failuresByReason": {
+              "408": 1
+            },
+            "retransmissions": 6,
+            "sippCpuPct": 7,
+            "uutCpuPct": 7.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          }
+        ]
+      },
+      "resources": {
+        "processes": [
+          {
+            "name": "edgeport",
+            "samples": [
+              {
+                "t": "2026-10-20T10:00:05Z",
+                "rssMB": 1180,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T10:01:05Z",
+                "rssMB": 1184,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T10:02:05Z",
+                "rssMB": 1188,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T10:03:05Z",
+                "rssMB": 1192,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T10:04:05Z",
+                "rssMB": 1196,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T10:05:05Z",
+                "rssMB": 1200,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 41
+              }
+            ]
+          },
+          {
+            "name": "echo",
+            "samples": [
+              {
+                "t": "2026-10-20T10:00:05Z",
+                "rssMB": 42,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-20T10:01:05Z",
+                "rssMB": 42.1,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-20T10:02:05Z",
+                "rssMB": 42.2,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-20T10:03:05Z",
+                "rssMB": 42.3,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-20T10:04:05Z",
+                "rssMB": 42.4,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 12
+              },
+              {
+                "t": "2026-10-20T10:05:05Z",
+                "rssMB": 42.5,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 12
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "one-soak",
+      "kind": "soak",
+      "title": "RoutrOne, six hours",
+      "narrative": {
+        "what": "The whole stack in one image, EdgePort plus Dispatcher, Connect, Location and the data service in one Node process, routing calls between registered agents.",
+        "why": "Leaks only show after hours. A short test can pass while memory climbs until the process is killed in production.",
+        "how": "SIPp holds a steady 100 calls/s for six hours, with 200 registered callee agents, each called by its own caller agent through Connect. After a 30-minute warm-up, each process's memory may grow at most 5 MB/h."
+      },
+      "verdict": "failed",
+      "reason": null,
+      "durationS": 23400,
+      "warmupS": 1800,
+      "tool": "SIPp 3.7.3, UDP; OpenTelemetry",
+      "load": {
+        "cps": 100,
+        "holdS": 30
+      },
+      "rules": [
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "one",
+          "limit": 5,
+          "measured": 7.4,
+          "passed": false
+        },
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "edgeport",
+          "limit": 5,
+          "measured": 0.3,
+          "passed": true
+        },
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "postgres",
+          "limit": 5,
+          "measured": 0.1,
+          "passed": true
+        },
+        {
+          "id": "failedCallsPct",
+          "limit": 0.1,
+          "measured": 0.01,
+          "passed": true
+        },
+        {
+          "id": "restarts",
+          "limit": 0,
+          "measured": 0,
+          "passed": true
+        }
+      ],
+      "headline": {
+        "memoryGrowthMBPerHour": 7.4,
+        "calls": 2160000,
+        "registrations": 200,
+        "registerFailures": 0
+      },
+      "reported": {
+        "p99FirstHourMs": 21,
+        "p99LastHourMs": 34,
+        "maxOpenFds": {
+          "one": 212,
+          "edgeport": 388,
+          "postgres": 40
+        },
+        "maxConcurrentCalls": 3010
+      },
+      "resources": {
+        "processes": [
+          {
+            "name": "one",
+            "samples": [
+              {
+                "t": "2026-10-20T10:32:05Z",
+                "rssMB": 312.4,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T11:32:05Z",
+                "rssMB": 319.8,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T12:32:05Z",
+                "rssMB": 327.2,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T13:32:05Z",
+                "rssMB": 334.6,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T14:32:05Z",
+                "rssMB": 342,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T15:32:05Z",
+                "rssMB": 349.4,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 7
+              },
+              {
+                "t": "2026-10-20T16:32:05Z",
+                "rssMB": 356.8,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 7
+              }
+            ]
+          },
+          {
+            "name": "edgeport",
+            "samples": [
+              {
+                "t": "2026-10-20T10:32:05Z",
+                "rssMB": 1420,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T11:32:05Z",
+                "rssMB": 1420.3,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T12:32:05Z",
+                "rssMB": 1420.6,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T13:32:05Z",
+                "rssMB": 1420.9,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T14:32:05Z",
+                "rssMB": 1421.2,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T15:32:05Z",
+                "rssMB": 1421.5,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 41
+              },
+              {
+                "t": "2026-10-20T16:32:05Z",
+                "rssMB": 1421.8,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 41
+              }
+            ]
+          },
+          {
+            "name": "postgres",
+            "samples": [
+              {
+                "t": "2026-10-20T10:32:05Z",
+                "rssMB": 96,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T11:32:05Z",
+                "rssMB": 96.1,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T12:32:05Z",
+                "rssMB": 96.2,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T13:32:05Z",
+                "rssMB": 96.3,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T14:32:05Z",
+                "rssMB": 96.4,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T15:32:05Z",
+                "rssMB": 96.5,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 58
+              },
+              {
+                "t": "2026-10-20T16:32:05Z",
+                "rssMB": 96.6,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 58
+              }
+            ]
+          }
+        ]
+      },
+      "hops": {
+        "sampleRatio": 0.01,
+        "spans": 151000,
+        "services": [
+          {
+            "service": "edgeport",
+            "p50Ms": 4.1,
+            "p99Ms": 9.3
+          },
+          {
+            "service": "dispatcher",
+            "p50Ms": 0.6,
+            "p99Ms": 1.2
+          },
+          {
+            "service": "connect",
+            "p50Ms": 1.4,
+            "p99Ms": 3.8
+          },
+          {
+            "service": "location",
+            "p50Ms": 0.3,
+            "p99Ms": 0.9
+          }
+        ]
+      }
+    }
+  ]
+}
