@@ -49,7 +49,13 @@ async function run(args: string[], memory: Record<string, Json> = {}) {
             (s) => s.isFile(),
             () => false
           ),
-    infra: infraDeps()
+    infra: infraDeps(),
+    writeFile: async () => {
+      throw new Error("validate never writes");
+    },
+    fetchText: async () => {
+      throw new Error("validate never fetches");
+    }
   });
   return { code, out: out.join(""), err: err.join("") };
 }

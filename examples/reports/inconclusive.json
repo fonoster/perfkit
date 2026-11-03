@@ -1,0 +1,902 @@
+{
+  "schema": "perfkit/report/v1",
+  "project": {
+    "name": "Routr",
+    "repo": "fonoster/routr",
+    "siteUrl": "https://routr.io/benchmarks",
+    "accent": "#5FCFCE",
+    "logoSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#5FCFCE\"/></svg>",
+    "title": "How much SIP traffic Routr handles.",
+    "lead": "We run these tests after significant changes to the code, on dedicated DigitalOcean servers, one for Routr and one for the load generator. The EdgePort runs alone to find its limit; the whole stack runs for hours to catch leaks."
+  },
+  "run": {
+    "id": "20261117T080000Z-b2c3d4e",
+    "version": "2.31.7",
+    "commit": "b2c3d4e5f6a7",
+    "startedAt": "2026-11-17T08:00:00Z",
+    "endedAt": "2026-11-17T15:07:34Z",
+    "infra": {
+      "provider": "digitalocean",
+      "region": "nyc3",
+      "uut": {
+        "size": "c-8",
+        "vcpus": 8,
+        "memoryMB": 16384
+      },
+      "loadgen": {
+        "size": "c-16",
+        "vcpus": 16,
+        "memoryMB": 32768
+      },
+      "os": "Ubuntu 24.04",
+      "docker": "27.3.1"
+    },
+    "images": {
+      "edgeport": "fonoster/routr-edgeport:2.31.7@sha256:10f98210a9321ba432cb543dc654ed765fe8760f98710a9821ba932cba43dcb5",
+      "echo": "fonoster/routr-echo:2.31.7@sha256:8833e9944faa550bb661cc772dd883ee994ffaa500bb611cc722dd833ee944ff",
+      "one": "fonoster/routr-one:2.31.7@sha256:f0c8401d9512ea623fb7340c8451d9562ea673fb7840c8951d9a62eab73fbc84"
+    },
+    "tools": {
+      "perfkit": "0.1.0",
+      "sipp": "3.7.3",
+      "otelcol": "0.112.0"
+    },
+    "command": "npx -y github:fonoster/perfkit#v0.1.0 run --config perf/perfkit.yaml --target-version 2.31.7"
+  },
+  "verdict": {
+    "total": 2,
+    "passed": 1,
+    "failed": 0,
+    "inconclusive": 1,
+    "aborted": 0,
+    "notRun": 0
+  },
+  "benchmarks": [
+    {
+      "id": "edgeport-echo",
+      "kind": "capacity",
+      "title": "EdgePort + Echo",
+      "narrative": {
+        "what": "The EdgePort on its own, with Echo answering every request with 200 OK. No Dispatcher, Connect or database, so this is a ceiling for EdgePort alone, not for a full deployment.",
+        "why": "The EdgePort is the only stateful piece of Routr. When it saturates, calls fail, no matter what runs behind it.",
+        "how": "SIPp places calls (INVITE, 200, ACK, BYE after 1 s) over UDP and adds 50 calls/s every minute. The run stops at the first step where p99 reaches 50 ms or failed calls reach 0.1%."
+      },
+      "unit": "messages",
+      "verdict": "inconclusive",
+      "reason": "load generator saturated at 1,300 messages/s (SIPp at 93% of one core)",
+      "durationS": 1560,
+      "tool": "SIPp 3.7.3, UDP",
+      "series": {
+        "steps": [
+          {
+            "offeredCps": 50,
+            "achievedCps": 49.6,
+            "calls": 3000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 0,
+            "failuresByReason": {},
+            "retransmissions": 6,
+            "sippCpuPct": 7,
+            "uutCpuPct": 7.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 100,
+            "achievedCps": 99.2,
+            "calls": 6000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 1,
+            "failuresByReason": {
+              "408": 1
+            },
+            "retransmissions": 12,
+            "sippCpuPct": 9,
+            "uutCpuPct": 11.1,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 150,
+            "achievedCps": 148.8,
+            "calls": 9000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 1,
+            "failuresByReason": {
+              "408": 1
+            },
+            "retransmissions": 18,
+            "sippCpuPct": 11,
+            "uutCpuPct": 14.7,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 200,
+            "achievedCps": 198.4,
+            "calls": 12000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 2,
+            "failuresByReason": {
+              "408": 2
+            },
+            "retransmissions": 24,
+            "sippCpuPct": 13,
+            "uutCpuPct": 18.3,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 250,
+            "achievedCps": 248,
+            "calls": 15000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 2,
+            "failuresByReason": {
+              "408": 2
+            },
+            "retransmissions": 30,
+            "sippCpuPct": 15,
+            "uutCpuPct": 21.9,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 300,
+            "achievedCps": 297.6,
+            "calls": 18000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 3,
+            "failuresByReason": {
+              "408": 3
+            },
+            "retransmissions": 36,
+            "sippCpuPct": 17,
+            "uutCpuPct": 25.4,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 350,
+            "achievedCps": 347.2,
+            "calls": 21000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 4,
+            "failuresByReason": {
+              "408": 4
+            },
+            "retransmissions": 42,
+            "sippCpuPct": 19,
+            "uutCpuPct": 29,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 400,
+            "achievedCps": 396.8,
+            "calls": 24000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4,
+            "failed": 5,
+            "failuresByReason": {
+              "408": 5
+            },
+            "retransmissions": 48,
+            "sippCpuPct": 21,
+            "uutCpuPct": 32.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 450,
+            "achievedCps": 446.4,
+            "calls": 27000,
+            "p50Ms": 1,
+            "p95Ms": 2.8,
+            "p99Ms": 4.1,
+            "failed": 6,
+            "failuresByReason": {
+              "408": 6
+            },
+            "retransmissions": 54,
+            "sippCpuPct": 23,
+            "uutCpuPct": 36.1,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 500,
+            "achievedCps": 496,
+            "calls": 30000,
+            "p50Ms": 1,
+            "p95Ms": 2.9,
+            "p99Ms": 4.1,
+            "failed": 6,
+            "failuresByReason": {
+              "408": 6
+            },
+            "retransmissions": 60,
+            "sippCpuPct": 25,
+            "uutCpuPct": 39.7,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 550,
+            "achievedCps": 545.6,
+            "calls": 33000,
+            "p50Ms": 1,
+            "p95Ms": 2.9,
+            "p99Ms": 4.2,
+            "failed": 7,
+            "failuresByReason": {
+              "408": 7
+            },
+            "retransmissions": 66,
+            "sippCpuPct": 27,
+            "uutCpuPct": 43.3,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 600,
+            "achievedCps": 595.2,
+            "calls": 36000,
+            "p50Ms": 1.1,
+            "p95Ms": 3,
+            "p99Ms": 4.3,
+            "failed": 9,
+            "failuresByReason": {
+              "408": 9
+            },
+            "retransmissions": 72,
+            "sippCpuPct": 29,
+            "uutCpuPct": 46.9,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 650,
+            "achievedCps": 644.8,
+            "calls": 39000,
+            "p50Ms": 1.1,
+            "p95Ms": 3.2,
+            "p99Ms": 4.5,
+            "failed": 10,
+            "failuresByReason": {
+              "408": 10
+            },
+            "retransmissions": 78,
+            "sippCpuPct": 31,
+            "uutCpuPct": 50.4,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 700,
+            "achievedCps": 694.4,
+            "calls": 42000,
+            "p50Ms": 1.2,
+            "p95Ms": 3.4,
+            "p99Ms": 4.8,
+            "failed": 11,
+            "failuresByReason": {
+              "408": 11
+            },
+            "retransmissions": 84,
+            "sippCpuPct": 33,
+            "uutCpuPct": 54,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 750,
+            "achievedCps": 744,
+            "calls": 45000,
+            "p50Ms": 1.3,
+            "p95Ms": 3.7,
+            "p99Ms": 5.3,
+            "failed": 12,
+            "failuresByReason": {
+              "408": 12
+            },
+            "retransmissions": 90,
+            "sippCpuPct": 35,
+            "uutCpuPct": 57.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 800,
+            "achievedCps": 793.6,
+            "calls": 48000,
+            "p50Ms": 1.5,
+            "p95Ms": 4.1,
+            "p99Ms": 5.8,
+            "failed": 14,
+            "failuresByReason": {
+              "408": 14
+            },
+            "retransmissions": 96,
+            "sippCpuPct": 37,
+            "uutCpuPct": 61.1,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 850,
+            "achievedCps": 843.2,
+            "calls": 51000,
+            "p50Ms": 1.7,
+            "p95Ms": 4.7,
+            "p99Ms": 6.7,
+            "failed": 15,
+            "failuresByReason": {
+              "408": 15
+            },
+            "retransmissions": 102,
+            "sippCpuPct": 39,
+            "uutCpuPct": 64.7,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 900,
+            "achievedCps": 892.8,
+            "calls": 54000,
+            "p50Ms": 1.9,
+            "p95Ms": 5.4,
+            "p99Ms": 7.7,
+            "failed": 17,
+            "failuresByReason": {
+              "408": 17
+            },
+            "retransmissions": 108,
+            "sippCpuPct": 41,
+            "uutCpuPct": 68.3,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 950,
+            "achievedCps": 942.4,
+            "calls": 57000,
+            "p50Ms": 2.3,
+            "p95Ms": 6.4,
+            "p99Ms": 9.2,
+            "failed": 18,
+            "failuresByReason": {
+              "408": 18
+            },
+            "retransmissions": 114,
+            "sippCpuPct": 43,
+            "uutCpuPct": 71.9,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1000,
+            "achievedCps": 992,
+            "calls": 60000,
+            "p50Ms": 2.8,
+            "p95Ms": 7.7,
+            "p99Ms": 11,
+            "failed": 20,
+            "failuresByReason": {
+              "408": 20
+            },
+            "retransmissions": 120,
+            "sippCpuPct": 45,
+            "uutCpuPct": 75.4,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1050,
+            "achievedCps": 1041.6,
+            "calls": 63000,
+            "p50Ms": 3.4,
+            "p95Ms": 9.4,
+            "p99Ms": 13.4,
+            "failed": 22,
+            "failuresByReason": {
+              "408": 22
+            },
+            "retransmissions": 126,
+            "sippCpuPct": 47,
+            "uutCpuPct": 79,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1100,
+            "achievedCps": 1091.2,
+            "calls": 66000,
+            "p50Ms": 4.1,
+            "p95Ms": 11.5,
+            "p99Ms": 16.5,
+            "failed": 23,
+            "failuresByReason": {
+              "408": 23
+            },
+            "retransmissions": 132,
+            "sippCpuPct": 49,
+            "uutCpuPct": 82.6,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1150,
+            "achievedCps": 1140.8,
+            "calls": 69000,
+            "p50Ms": 5.1,
+            "p95Ms": 14.2,
+            "p99Ms": 20.3,
+            "failed": 25,
+            "failuresByReason": {
+              "408": 25
+            },
+            "retransmissions": 138,
+            "sippCpuPct": 51,
+            "uutCpuPct": 86.1,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1200,
+            "achievedCps": 1190.4,
+            "calls": 72000,
+            "p50Ms": 6.3,
+            "p95Ms": 17.5,
+            "p99Ms": 25,
+            "failed": 27,
+            "failuresByReason": {
+              "408": 27
+            },
+            "retransmissions": 144,
+            "sippCpuPct": 53,
+            "uutCpuPct": 89.7,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1250,
+            "achievedCps": 1240,
+            "calls": 75000,
+            "p50Ms": 7.7,
+            "p95Ms": 21.6,
+            "p99Ms": 30.9,
+            "failed": 29,
+            "failuresByReason": {
+              "408": 29
+            },
+            "retransmissions": 150,
+            "sippCpuPct": 55,
+            "uutCpuPct": 93.3,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          },
+          {
+            "offeredCps": 1300,
+            "achievedCps": 1289.6,
+            "calls": 78000,
+            "p50Ms": 15.5,
+            "p95Ms": 43.4,
+            "p99Ms": 62,
+            "failed": 47,
+            "failuresByReason": {
+              "408": 47
+            },
+            "retransmissions": 156,
+            "sippCpuPct": 57,
+            "uutCpuPct": 96.9,
+            "loadgenUdpDrops": 0,
+            "uutUdpDrops": 0,
+            "valid": true
+          }
+        ]
+      },
+      "resources": {
+        "processes": [
+          {
+            "name": "edgeport",
+            "samples": [
+              {
+                "t": "2026-11-17T08:00:00Z",
+                "rssMB": 1180,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T08:04:00Z",
+                "rssMB": 1184,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T08:08:00Z",
+                "rssMB": 1188,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T08:12:00Z",
+                "rssMB": 1192,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T08:16:00Z",
+                "rssMB": 1196,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T08:20:00Z",
+                "rssMB": 1200,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 41
+              }
+            ]
+          },
+          {
+            "name": "echo",
+            "samples": [
+              {
+                "t": "2026-11-17T08:00:00Z",
+                "rssMB": 42,
+                "cpuPct": 20,
+                "fds": 150,
+                "pid": 12
+              },
+              {
+                "t": "2026-11-17T08:04:00Z",
+                "rssMB": 42.1,
+                "cpuPct": 57,
+                "fds": 157,
+                "pid": 12
+              },
+              {
+                "t": "2026-11-17T08:08:00Z",
+                "rssMB": 42.2,
+                "cpuPct": 44,
+                "fds": 164,
+                "pid": 12
+              },
+              {
+                "t": "2026-11-17T08:12:00Z",
+                "rssMB": 42.3,
+                "cpuPct": 31,
+                "fds": 171,
+                "pid": 12
+              },
+              {
+                "t": "2026-11-17T08:16:00Z",
+                "rssMB": 42.4,
+                "cpuPct": 68,
+                "fds": 178,
+                "pid": 12
+              },
+              {
+                "t": "2026-11-17T08:20:00Z",
+                "rssMB": 42.5,
+                "cpuPct": 55,
+                "fds": 185,
+                "pid": 12
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "one-soak",
+      "kind": "soak",
+      "title": "RoutrOne, six hours",
+      "narrative": {
+        "what": "The whole stack in one image, EdgePort plus Dispatcher, Connect, Location and the data service in one Node process, routing calls between registered agents.",
+        "why": "Leaks only show after hours. A short test can pass while memory climbs until the process is killed in production.",
+        "how": "SIPp holds a steady 100 calls/s for six hours, with 200 registered callee agents, each called by its own caller agent through Connect. After a 30-minute warm-up, each process's memory may grow at most 5 MB/h."
+      },
+      "unit": "calls",
+      "verdict": "passed",
+      "reason": null,
+      "durationS": 23400,
+      "warmupS": 1800,
+      "tool": "SIPp 3.7.3, UDP; OpenTelemetry",
+      "load": {
+        "cps": 100,
+        "holdS": 30
+      },
+      "rules": [
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "one",
+          "limit": 5,
+          "measured": 1.8,
+          "passed": true
+        },
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "edgeport",
+          "limit": 5,
+          "measured": 0.3,
+          "passed": true
+        },
+        {
+          "id": "memoryGrowthMBPerHour",
+          "process": "postgres",
+          "limit": 5,
+          "measured": 0.1,
+          "passed": true
+        },
+        {
+          "id": "failedCallsPct",
+          "limit": 0.1,
+          "measured": 0.01,
+          "passed": true
+        },
+        {
+          "id": "restarts",
+          "limit": 0,
+          "measured": 0,
+          "passed": true
+        }
+      ],
+      "headline": {
+        "memoryGrowthMBPerHour": 1.8,
+        "calls": 2160000,
+        "registrations": 200,
+        "registerFailures": 0
+      },
+      "reported": {
+        "p99FirstHourMs": 21,
+        "p99LastHourMs": 23,
+        "maxOpenFds": {
+          "one": 212,
+          "edgeport": 388,
+          "postgres": 40
+        },
+        "maxConcurrentCalls": 3010
+      },
+      "resources": {
+        "processes": [
+          {
+            "name": "one",
+            "samples": [
+              {
+                "t": "2026-11-17T09:00:00Z",
+                "rssMB": 312.4,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T10:00:00Z",
+                "rssMB": 314.2,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T11:00:00Z",
+                "rssMB": 316,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T12:00:00Z",
+                "rssMB": 317.8,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T13:00:00Z",
+                "rssMB": 319.6,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T14:00:00Z",
+                "rssMB": 321.4,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 7
+              },
+              {
+                "t": "2026-11-17T15:00:00Z",
+                "rssMB": 323.2,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 7
+              }
+            ]
+          },
+          {
+            "name": "edgeport",
+            "samples": [
+              {
+                "t": "2026-11-17T09:00:00Z",
+                "rssMB": 1420,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T10:00:00Z",
+                "rssMB": 1420.3,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T11:00:00Z",
+                "rssMB": 1420.6,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T12:00:00Z",
+                "rssMB": 1420.9,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T13:00:00Z",
+                "rssMB": 1421.2,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T14:00:00Z",
+                "rssMB": 1421.5,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 41
+              },
+              {
+                "t": "2026-11-17T15:00:00Z",
+                "rssMB": 1421.8,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 41
+              }
+            ]
+          },
+          {
+            "name": "postgres",
+            "samples": [
+              {
+                "t": "2026-11-17T09:00:00Z",
+                "rssMB": 96,
+                "cpuPct": 55,
+                "fds": 190,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T10:00:00Z",
+                "rssMB": 96.1,
+                "cpuPct": 58,
+                "fds": 191,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T11:00:00Z",
+                "rssMB": 96.2,
+                "cpuPct": 61,
+                "fds": 192,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T12:00:00Z",
+                "rssMB": 96.3,
+                "cpuPct": 55,
+                "fds": 193,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T13:00:00Z",
+                "rssMB": 96.4,
+                "cpuPct": 58,
+                "fds": 194,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T14:00:00Z",
+                "rssMB": 96.5,
+                "cpuPct": 61,
+                "fds": 195,
+                "pid": 58
+              },
+              {
+                "t": "2026-11-17T15:00:00Z",
+                "rssMB": 96.6,
+                "cpuPct": 55,
+                "fds": 196,
+                "pid": 58
+              }
+            ]
+          }
+        ]
+      },
+      "hops": {
+        "sampleRatio": 0.01,
+        "spans": 151000,
+        "services": [
+          {
+            "service": "edgeport",
+            "p50Ms": 4.1,
+            "p99Ms": 9.3
+          },
+          {
+            "service": "dispatcher",
+            "p50Ms": 0.6,
+            "p99Ms": 1.2
+          },
+          {
+            "service": "connect",
+            "p50Ms": 1.4,
+            "p99Ms": 3.8
+          },
+          {
+            "service": "location",
+            "p50Ms": 0.3,
+            "p99Ms": 0.9
+          }
+        ]
+      }
+    }
+  ]
+}

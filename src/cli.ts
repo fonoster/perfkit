@@ -2,9 +2,10 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { notImplementedExecutor } from "./cli/notImplementedExecutor.js";
+import { dirname } from "node:path";
 import { runCli } from "./cli/runCli.js";
 import { EXIT_CANCELLED } from "./cli/types.js";
 import {
@@ -59,6 +60,14 @@ const code = await runCli(process.argv, {
     createDoClient: (token) => createDoClient({ token, fetch }),
     ssh: createSshTools({ run: runProgram }),
     executeBenchmarks: notImplementedExecutor
+  },
+  writeFile: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, text, "utf8");
+  },
+  fetchText: async (url) => {
+    const response = await fetch(url, { redirect: "follow" });
+    return { status: response.status, text: await response.text() };
   }
 });
 

@@ -10,6 +10,7 @@ import type {
   Sleep,
   SshTools
 } from "../infra/index.js";
+import type { RenderSiteDeps } from "../render/types.js";
 import type { ValidateFileDeps } from "../validate/types.js";
 
 export const EXIT_OK = 0;
@@ -50,7 +51,7 @@ export interface InfraCliDeps {
   executeBenchmarks: BenchmarkExecutor;
 }
 
-export interface CliDeps extends ValidateFileDeps {
+export interface CliDeps extends ValidateFileDeps, RenderSiteDeps {
   version: string;
   stdout: (text: string) => void;
   stderr: (text: string) => void;

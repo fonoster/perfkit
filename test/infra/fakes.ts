@@ -355,6 +355,12 @@ export async function perfkit(
         (s) => s.isFile(),
         () => false
       ),
+    writeFile: async () => {
+      throw new Error("run and sweep never write the site");
+    },
+    fetchText: async () => {
+      throw new Error("run and sweep never fetch");
+    },
     infra
   };
   const code = await runCli(["node", "perfkit", ...args], deps);
