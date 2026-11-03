@@ -715,7 +715,7 @@
                 {
                   "type": "text",
                   "id": "r4rGT",
-                  "content": "RoutrOne soak, 15.1M calls",
+                  "content": "RoutrOne soak, 2.2M calls",
                   "fill": "$text-secondary",
                   "fontFamily": "Poppins",
                   "fontSize": 14
@@ -1955,7 +1955,7 @@
                 {
                   "type": "text",
                   "id": "EFZe0",
-                  "content": "6 h · 700 calls/s steady · SIPp 3.7 · UDP",
+                  "content": "6 h · 100 calls/s steady · SIPp 3.7 · UDP",
                   "fill": "$text-muted",
                   "fontFamily": "Roboto Mono",
                   "fontSize": 13
@@ -2121,7 +2121,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "lineHeight": 1.6,
-                      "content": "SIPp holds 700 calls/s, 60% of this run's EdgePort limit, for six hours, with 200 registered agents. After a 30-minute warm-up, each process's memory may grow at most 5 MB/h.",
+                      "content": "SIPp holds a steady 100 calls/s of 30-second calls for six hours, with 200 registered agents. After a 30-minute warm-up, each process's memory may grow at most 5 MB/h.",
                       "fill": "$text-secondary",
                       "fontFamily": "Poppins",
                       "fontSize": 14
@@ -2916,7 +2916,7 @@
                                 {
                                   "type": "text",
                                   "id": "kZApE",
-                                  "content": "Registrations held",
+                                  "content": "Failed re-registrations",
                                   "fill": "$text-secondary",
                                   "fontFamily": "Poppins",
                                   "fontSize": 14
@@ -2926,7 +2926,7 @@
                             {
                               "type": "text",
                               "id": "DS2YV",
-                              "content": "200 of 200",
+                              "content": "0 of 200 agents",
                               "fill": "$text-primary",
                               "fontFamily": "Roboto Mono",
                               "fontSize": 14,
