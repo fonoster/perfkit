@@ -47,7 +47,13 @@ async function run(args: string[], memory: Record<string, Json> = {}) {
         : stat(path).then(
             (s) => s.isFile(),
             () => false
-          )
+          ),
+    writeFile: async () => {
+      throw new Error("validate never writes");
+    },
+    fetchText: async () => {
+      throw new Error("validate never fetches");
+    }
   });
   return { code, out: out.join(""), err: err.join("") };
 }

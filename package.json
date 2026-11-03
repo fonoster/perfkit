@@ -48,6 +48,7 @@
     "@types/sinon": "^22.0.2",
     "@types/sinon-chai": "^4.0.1",
     "chai": "^6.3.0",
+    "cheerio": "^1.2.0",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "mocha": "^11.8.0",
