@@ -85,6 +85,63 @@ A valid file prints one line on stdout. Every error is one line on stderr,
 `perfkit validate --help` lists the accepted formats, and `perfkit --version` prints the
 perfkit version.
 
+## How verdicts are computed
+
+perfkit turns the raw results of a run into each benchmark's verdict with fixed rules, so two runs
+of the same build agree. Every threshold comes from `perfkit.yaml`; none is built in. Latency is
+the time from the request a scenario marks with `start_rtd="1"` to the 200 OK it marks with
+`rtd="1"`, per call as SIPp records it (`-trace_rtt`). Percentiles are nearest-rank: p99 is the
+value at rank ⌈0.99 × n⌉ of the sorted calls. SIPp's own averages and buckets are never used. A
+failed call is one SIPp counts as failed, and CPU is in % of one core, so 100 is one full core.
+
+### Capacity
+
+SIPp adds load in steps, such as 50 more calls/s every minute. For each step:
+
+- Its latency counts the calls whose request was **sent** in the step, even when the answer came
+  in the next one.
+- Its attempted, failed and retransmitted calls are SIPp's 10-second counters (`-trace_stat`)
+  that fall in the step. Failed % is failed / attempted.
+
+perfkit checks the steps in order:
+
+1. **Is the measurement valid?** A step is invalid when the load generator, not the server, was
+   the bottleneck: SIPp used more than 80% of one core, placed less than 95% of the offered rate,
+   or the load generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
+   names the step and the cause, and no limit is published.
+2. **Does it pass?** A step passes when p99 is **below** `p99LatencyMs` and failed % is **below**
+   `failedCallsPct`. Both limits are strict: a p99 of exactly 50 ms breaks a 50 ms limit. The
+   first step that breaks either rule ends the ramp.
+
+The **limit** is the offered rate of the last step that passed, and the rules are shown at that
+step, so the verdict is **passed**. When the first step already breaks a rule there is no limit
+and the verdict is **failed**. When no step broke a rule, the limit is a lower bound: the server
+can take more than the ramp offered.
+
+Each step also shows retransmissions, the server's CPU (the sum of its processes) and UDP drops on
+both machines. They are reported and never change the verdict.
+
+### Soak
+
+A soak holds a fixed rate for hours to find leaks.
+
+- **Warm-up excluded.** Nothing measured during `warmup` counts toward any rule.
+- **Too little data.** When the samples after the warm-up cover less than 90% of `duration`, the
+  verdict is **aborted** and no rule is checked. A short soak configured as short, such as a
+  20-minute smoke run, is fine.
+- **Memory growth.** For each process, the least-squares slope of its memory (RSS) in MB per
+  hour. It fails at the threshold or above: 5.0 MB/h fails a 5 MB/h limit. The headline is the
+  steepest process.
+- **Failed calls.** Failed % over every call after the warm-up. It fails at the threshold or
+  above.
+- **Restarts.** A process whose PID changed, or that was missing from a sample, restarted once.
+  It fails above the threshold.
+
+The verdict is **failed** when any rule failed and **passed** otherwise. Also reported, never
+part of the verdict: p99 in the first and the last hour after the warm-up, the most open file
+descriptors per process, the most concurrent calls, the registrations and their failures, and,
+with telemetry, each service's p50 and p99 self time (a span's time minus its direct children's).
+
 ## Development
 
 Node 22 (`.nvmrc`).
