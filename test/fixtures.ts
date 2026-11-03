@@ -17,7 +17,10 @@ export const REPORT_FORMS = [
   "passed",
   "failed",
   "first-run",
-  "not-run"
+  "not-run",
+  "aborted-soak",
+  "inconclusive",
+  "lower-bound"
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
