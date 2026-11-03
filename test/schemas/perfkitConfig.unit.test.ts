@@ -125,7 +125,7 @@ describe("perfkitConfigSchema", () => {
 
     it("should require exactly the thresholds of the kind", () => {
       const raw = loadConfig();
-      raw.benchmarks[0].thresholds = { p99InviteToOkMs: 50, restarts: 0 };
+      raw.benchmarks[0].thresholds = { p99LatencyMs: 50, restarts: 0 };
       raw.benchmarks[1].thresholds = { memoryGrowthMBPerHour: 5, failedCallsPct: 0.1 };
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
         "benchmarks[0].thresholds.failedCallsPct: required",

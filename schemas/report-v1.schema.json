@@ -288,6 +288,10 @@
                     ],
                     "additionalProperties": false
                   },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
+                  },
                   "kind": {
                     "type": "string",
                     "const": "capacity"
@@ -318,7 +322,7 @@
                         "id": {
                           "type": "string",
                           "enum": [
-                            "p99InviteToOkMs",
+                            "p99LatencyMs",
                             "failedCallsPct"
                           ]
                         },
@@ -405,7 +409,7 @@
                           "rule": {
                             "type": "string",
                             "enum": [
-                              "p99InviteToOkMs",
+                              "p99LatencyMs",
                               "failedCallsPct"
                             ]
                           },
@@ -647,6 +651,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason",
@@ -693,6 +698,10 @@
                       "how"
                     ],
                     "additionalProperties": false
+                  },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
                   },
                   "kind": {
                     "type": "string",
@@ -888,6 +897,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason",
@@ -930,6 +940,10 @@
                     ],
                     "additionalProperties": false
                   },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
+                  },
                   "kind": {
                     "type": "string",
                     "const": "capacity"
@@ -947,6 +961,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason"
@@ -990,6 +1005,10 @@
                       "how"
                     ],
                     "additionalProperties": false
+                  },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
                   },
                   "kind": {
                     "type": "string",
@@ -1283,6 +1302,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason",
@@ -1330,6 +1350,10 @@
                       "how"
                     ],
                     "additionalProperties": false
+                  },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
                   },
                   "kind": {
                     "type": "string",
@@ -1424,6 +1448,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason",
@@ -1466,6 +1491,10 @@
                     ],
                     "additionalProperties": false
                   },
+                  "unit": {
+                    "type": "string",
+                    "pattern": "^[a-z]+$"
+                  },
                   "kind": {
                     "type": "string",
                     "const": "soak"
@@ -1483,6 +1512,7 @@
                   "id",
                   "title",
                   "narrative",
+                  "unit",
                   "kind",
                   "verdict",
                   "reason"

@@ -75,6 +75,7 @@ Every benchmark carries:
 | :--- | :--- | :--- |
 | `id`, `kind`, `title` | string | From perfkit.yaml. `kind` is `capacity` or `soak`. |
 | `narrative` | object | `what`, `why` and `how`, from perfkit.yaml. |
+| `unit` | string | `load.unit` from perfkit.yaml, a lowercase plural noun: what one SIPp call is (`calls`, `messages`). The page writes rates as `<n> <unit>/s`. |
 | `verdict` | string | `passed`, `failed`, `inconclusive`, `aborted` or `not-run`. |
 | `reason` | string or null | For `inconclusive`, `aborted` and `not-run`: a lowercase clause with no final period, like `the server under test stopped responding`; the page builds its sentences around it. `null` for `passed` and `failed`. |
 
@@ -109,7 +110,7 @@ Capacity `headline`:
 | `failedAtLimitPct`, `retransmissionsAtLimitPct` | number or null | Percentages at the limit. `null` when `limitCps` is. |
 
 Capacity `stoppedBy`: the step that ended the ramp, `{ offeredCps, rule, measured, limit }`, where
-`rule` is `p99InviteToOkMs` or `failedCallsPct`. `null` when `limitIsLowerBound` is `true`.
+`rule` is `p99LatencyMs` or `failedCallsPct`. `null` when `limitIsLowerBound` is `true`.
 
 Capacity `series.steps`, one entry per step:
 

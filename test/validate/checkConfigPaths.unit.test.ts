@@ -28,7 +28,7 @@ describe("checkConfigPaths", () => {
       [
         "logo.svg",
         "edgeport-echo/compose.yaml",
-        "edgeport-echo/uac_invite.xml",
+        "edgeport-echo/uac_message.xml",
         "one-soak/compose.yaml",
         "one-soak/seed.js",
         "one-soak/uac_invite.xml",
