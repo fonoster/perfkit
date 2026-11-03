@@ -41,9 +41,8 @@ run perfkit through npm 11:
 npx -y npm@11 exec --yes --package=github:fonoster/perfkit#vX.Y.Z -- perfkit validate perf/perfkit.yaml
 ```
 
-Pin the
-same tag everywhere a project calls perfkit, and read the release notes before moving to a new
-one: each release says what changed for `perfkit.yaml`, the report schema and the workflow
+Pin the same tag everywhere a project calls perfkit, and read the release notes before moving to
+a new one: each release says what changed for `perfkit.yaml`, the report schema and the workflow
 inputs.
 
 ## perfkit validate
