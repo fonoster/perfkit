@@ -1,7 +1,8 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { dirname, resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { ValidationError } from "../errors/index.js";
 import {
   createPlanRun,
@@ -17,7 +18,15 @@ import {
   type RunOutcome,
   type SshIdentity
 } from "../infra/index.js";
+import { createLocalRemote } from "../orchestrate/createLocalRemote.js";
+import { createStartRun } from "../orchestrate/createStartRun.js";
+import type { PerfkitConfig } from "../schemas/index.js";
 import { createLoadConfig } from "../validate/createLoadConfig.js";
+import { checkComposeFiles } from "./checkComposeFiles.js";
+import { createStartExecutor } from "./createStartExecutor.js";
+import { localTeardown } from "./localTeardown.js";
+import { runCollectCommand } from "./runCollectCommand.js";
+import { homeRunDir } from "./runState.js";
 import { formatPlan } from "./formatPlan.js";
 import {
   type CliDeps,
@@ -36,6 +45,7 @@ export interface RunCommandOptions {
   out: string;
   detach: boolean;
   dryRun: boolean;
+  local?: boolean;
 }
 
 const FLAG_OF: Record<string, string> = {
@@ -71,6 +81,22 @@ export async function runRunCommand(
     return EXIT_BAD_INPUT;
   }
 
+  const selected = options.benchmarks
+    ?.split(",")
+    .map((id) => id.trim())
+    .filter((id) => id !== "");
+  const composeErrors = await checkComposeFiles(
+    loaded.config,
+    options.config,
+    selected,
+    deps.readFile
+  );
+  if (composeErrors.length > 0) {
+    composeErrors.forEach((line) => deps.stderr(`perfkit: ${line}\n`));
+    return EXIT_BAD_INPUT;
+  }
+  const local = options.local === true;
+
   const commit =
     options.commit ?? (await infra.gitHead(dirname(resolve(options.config))));
   if (commit === null) {
@@ -78,7 +104,7 @@ export async function runRunCommand(
   }
 
   const token = infra.env.DIGITALOCEAN_TOKEN;
-  if (!options.dryRun && !token) {
+  if (!local && !options.dryRun && !token) {
     return fail(
       EXIT_BAD_INPUT,
       "DIGITALOCEAN_TOKEN is not set; nothing was created"
@@ -87,7 +113,7 @@ export async function runRunCommand(
 
   let sharedIdentity: SshIdentity | undefined;
   const sharedKey = infra.env.PERFKIT_SSH_KEY;
-  if (!options.dryRun && sharedKey) {
+  if (!local && !options.dryRun && sharedKey) {
     const publicKey = await infra.ssh.publicKeyOf(sharedKey).catch(() => null);
     if (publicKey === null || !publicKey.startsWith("ssh-ed25519 ")) {
       return fail(
@@ -102,7 +128,7 @@ export async function runRunCommand(
     resolveImageDigests: createResolveImageDigests({
       registry: infra.registry
     }),
-    getPublicIp: infra.getPublicIp
+    getPublicIp: local ? async () => "127.0.0.1" : infra.getPublicIp
   });
   let plan: Plan;
   try {
@@ -111,10 +137,7 @@ export async function runRunCommand(
       targetVersion: options.targetVersion,
       commit,
       startedAt: new Date(infra.now()).toISOString().replace(/\.\d{3}Z$/, "Z"),
-      benchmarks: options.benchmarks
-        ?.split(",")
-        .map((id) => id.trim())
-        .filter((id) => id !== "")
+      benchmarks: selected
     });
   } catch (err) {
     if (err instanceof ValidationError) {
@@ -133,8 +156,13 @@ export async function runRunCommand(
     throw err;
   }
 
-  deps.stdout(formatPlan(plan, { dryRun: options.dryRun }));
+  deps.stdout(formatPlan(plan, { dryRun: options.dryRun, local }));
   if (options.dryRun) return EXIT_OK;
+  const command = describeCommand(options);
+  if (local) {
+    return runLocal({ plan, config: loaded.config, command, options }, deps);
+  }
+  const agentKey = await infra.ssh.generateKeyPair();
 
   const client = infra.createDoClient(token!);
   const teardown = createTeardown({
@@ -153,13 +181,111 @@ export async function runRunCommand(
     teardown,
     signals: infra.signals
   });
-  const outcome = await withRun(plan, (ctx) =>
-    infra.executeBenchmarks(ctx, {
-      out: options.out,
-      detach: options.detach
-    })
+  const execute = infra.executeBenchmarks ?? createStartExecutor(deps);
+  const outcome = await withRun(
+    plan,
+    (ctx) =>
+      execute(ctx, {
+        out: options.out,
+        detach: options.detach,
+        configPath: options.config,
+        config: loaded.config,
+        command,
+        agentKey: agentKey.privateKey
+      }),
+    { authorizedKeys: [agentKey.publicKey] }
   );
+  if (outcome.status === "completed" && outcome.handedOff) {
+    if (options.detach) {
+      deps.stdout(
+        `run ${plan.runId} started; collect it with: perfkit collect ${plan.runId}\n`
+      );
+      return EXIT_OK;
+    }
+    return runCollectCommand(
+      { runId: plan.runId, wait: false, out: options.out, timeout: null },
+      deps
+    );
+  }
   return report(outcome, plan, deps);
+}
+
+/** `perfkit run ...` as given, for report.json. */
+function describeCommand(options: RunCommandOptions): string {
+  return [
+    "perfkit run",
+    `--config ${options.config}`,
+    `--target-version ${options.targetVersion}`,
+    ...(options.commit ? [`--commit ${options.commit}`] : []),
+    ...(options.benchmarks ? [`--benchmarks ${options.benchmarks}`] : []),
+    ...(options.local ? ["--local"] : []),
+    ...(options.detach ? ["--detach"] : [])
+  ].join(" ");
+}
+
+/**
+ * `run --local`: the same run on this machine's Docker, with no droplets,
+ * no token and no SSH; its root is `~/.perfkit/runs/<id>/root`.
+ */
+async function runLocal(
+  input: {
+    plan: Plan;
+    config: PerfkitConfig;
+    command: string;
+    options: RunCommandOptions;
+  },
+  deps: CliDeps
+): Promise<number> {
+  const { plan, config, options } = input;
+  const { infra } = deps;
+  const dirs = homeRunDir(infra.home, plan.runId);
+  await mkdir(dirs.root, { recursive: true });
+  await writeFile(
+    dirs.local,
+    `${JSON.stringify({ mode: "local", root: dirs.root })}\n`
+  );
+  const logo = config.project.logo
+    ? (
+        await deps.readFile(join(dirname(options.config), config.project.logo))
+      ).trim()
+    : undefined;
+  try {
+    await createStartRun({
+      remote: createLocalRemote({ run: infra.runProgram }),
+      packageRoot: infra.packageRoot
+    })({
+      runId: plan.runId,
+      mode: "local",
+      root: dirs.root,
+      namePrefix: infra.namePrefix,
+      perfkitVersion: deps.version,
+      command: input.command,
+      plan,
+      config,
+      ...(logo ? { logoSvg: logo } : {}),
+      hosts: {
+        uutIp: "127.0.0.1",
+        loadgenIp: "127.0.0.1",
+        vpcCidr: "127.0.0.0/8"
+      },
+      projectDir: dirname(resolve(options.config)),
+      out: options.out
+    });
+  } catch (err) {
+    deps.stderr(`perfkit: ${messageOf(err)}\n`);
+    await localTeardown(plan.runId, config, infra).catch(() => undefined);
+    return EXIT_INFRA;
+  }
+  if (options.detach) {
+    deps.stdout(
+      `run ${plan.runId} started; collect it with: perfkit collect ${plan.runId}\n`
+    );
+    return EXIT_OK;
+  }
+  return runCollectCommand(
+    { runId: plan.runId, wait: false, out: options.out, timeout: null },
+    deps
+  );
 }
 
 function report(

@@ -5,7 +5,10 @@
  * An in-memory DigitalOcean account and the other fakes `run` and `sweep`
  * need. Nothing here reaches the network or spawns a program.
  */
+import { mkdtempSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runCli } from "../../src/cli/runCli.js";
 import type { CliDeps, InfraCliDeps } from "../../src/cli/types.js";
 import { DigitalOceanError } from "../../src/infra/errors.js";
@@ -289,7 +292,9 @@ export function fakeSsh(
     exec: async ({ command }) => {
       commands.push(command);
       return queue.shift() ?? { code: 0, stdout: "status: done\n", stderr: "" };
-    }
+    },
+    upload: async () => ({ code: 0, stdout: "", stderr: "" }),
+    download: async () => ({ code: 0, stdout: "", stderr: "" })
   };
 }
 
@@ -328,6 +333,11 @@ export function infraDeps(
       return account;
     },
     ssh: fakeSsh(),
+    runProgram: async () => ({ code: 0, stdout: "", stderr: "" }),
+    home: mkdtempSync(join(tmpdir(), "perfkit-home-")),
+    packageRoot: "/nonexistent/perfkit",
+    namePrefix: "pk",
+    runAgent: async () => ({ status: "done" }),
     executeBenchmarks: async () => ({ passed: true }),
     ...overrides,
     account,

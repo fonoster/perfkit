@@ -19,7 +19,10 @@ const LABEL_WIDTH = 11;
  *
  * Digests are shortened to their first and last 4 hex digits.
  */
-export function formatPlan(plan: Plan, options: { dryRun: boolean }): string {
+export function formatPlan(
+  plan: Plan,
+  options: { dryRun: boolean; local?: boolean }
+): string {
   const sizeWidth =
     Math.max(plan.uut.size.length, plan.loadgen.size.length) + 2;
   const field = (label: string, values: string[]) =>
@@ -27,6 +30,23 @@ export function formatPlan(plan: Plan, options: { dryRun: boolean }): string {
       (value, index) =>
         `  ${(index === 0 ? label : "").padEnd(LABEL_WIDTH)}${value}`
     );
+  if (options.local) {
+    return `${[
+      options.dryRun
+        ? `plan for ${plan.project} ${plan.targetVersion} (local dry run, nothing started)`
+        : `plan for ${plan.project} ${plan.targetVersion} (local run ${plan.runId})`,
+      ...field("hosts", [
+        "this machine's Docker, for the server under test and the load generator"
+      ]),
+      ...field(
+        "images",
+        plan.images.map(
+          (image) => `${image.name}:${image.tag}@${shortDigest(image.digest)}`
+        )
+      ),
+      ...field("benchmarks", plan.benchmarks.map(describeBenchmark))
+    ].join("\n")}\n`;
+  }
   const header = options.dryRun
     ? `plan for ${plan.project} ${plan.targetVersion} (dry run, nothing created)`
     : `plan for ${plan.project} ${plan.targetVersion} (run ${plan.runId})`;
@@ -65,7 +85,7 @@ function describeBenchmark(benchmark: BenchmarkConfig): string {
     const { start, step, every, max } = benchmark.load.rate;
     const steps = Math.floor((max - start) / step) + 1;
     const minutes = Math.ceil((steps * parseDuration(every)) / 60000);
-    return `${benchmark.id} (capacity, up to ${minutes} min at ${number(start)} to ${number(max)} calls/s)`;
+    return `${benchmark.id} (capacity, up to ${minutes} min at ${number(start)} to ${number(max)} ${benchmark.load.unit}/s)`;
   }
   const total =
     parseDuration(benchmark.duration) + parseDuration(benchmark.warmup);

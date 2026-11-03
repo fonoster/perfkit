@@ -4,9 +4,14 @@
 import { Command, CommanderError } from "commander";
 import { createRenderSite } from "../render/createRenderSite.js";
 import { createValidateFile } from "../validate/createValidateFile.js";
+import {
+  DEFAULT_COLLECT_TIMEOUT,
+  REMOTE_ROOT
+} from "../orchestrate/constants.js";
+import { runCollectCommand } from "./runCollectCommand.js";
 import { runRunCommand } from "./runRunCommand.js";
 import { runSweepCommand } from "./runSweepCommand.js";
-import { type CliDeps, EXIT_BAD_INPUT } from "./types.js";
+import { type CliDeps, EXIT_BAD_INPUT, EXIT_INFRA } from "./types.js";
 
 export type { CliDeps, InfraCliDeps } from "./types.js";
 
@@ -32,12 +37,17 @@ Exit codes:
   1    report written, at least one benchmark not passed
   2    bad config, flags or a missing token; nothing created
   3    infrastructure error; everything this run created is deleted, no report
-  130  cancelled; everything deleted`;
+  130  cancelled; everything deleted, a report if a benchmark finished`;
 
 const RUN_HELP = `
 This creates two billable dedicated-CPU DigitalOcean droplets (the sizes in
 perfkit.yaml) and deletes them at the end, on every exit path. If a run is
 killed before it can delete them, perfkit sweep deletes them later.
+
+With --local it creates nothing on DigitalOcean: the server under test and
+the load generator run on this machine's Docker, with host networking, and
+the run needs no token. With --detach it returns once the agent on the load
+generator has started; perfkit collect <run id> finishes it.
 
 Environment:
   DIGITALOCEAN_TOKEN  required, except with --dry-run. Never printed, never
@@ -60,6 +70,27 @@ Exit codes:
   0  everything selected was deleted, or there was nothing to sweep
   2  bad flags or config, or a missing token
   3  a DigitalOcean API error, or a delete that failed`;
+
+const COLLECT_HELP = `
+Follows a run started with --detach: prints its progress and downloads each
+benchmark's raw results into <out>/<run id>/raw/ as soon as it is done. It
+finds the droplets by the tag perfkit-run-<run id> and first adds this
+machine's public IP to the run's firewall. Once the run is done it writes
+<out>/<run id>/report.json and deletes everything; with --wait it only
+waits and never deletes.
+
+Environment:
+  DIGITALOCEAN_TOKEN  required, except for a --local run.
+  PERFKIT_SSH_KEY     the key the run was started with, unless this machine
+                      started it (its key is in ~/.perfkit/runs/<run id>/).
+
+Exit codes:
+  0    the run is done (with --wait), or every benchmark passed
+  1    report written, at least one benchmark not passed
+  2    bad flags, a missing token or no SSH key for the run
+  3    the agent failed, or no benchmark produced results
+  4    the timeout passed while the run goes on; nothing deleted
+  130  cancelled; with --wait nothing deleted, otherwise everything`;
 const RENDER_HELP = `
 Writes to --out:
   index.html             the latest run (only when this run is the newest)
@@ -96,7 +127,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     .addHelpText("after", FORMATS_HELP)
     .hook("preSubcommand", (_program, subcommand) => {
       // run and sweep exit 2 on a usage error; validate and render exit 1.
-      if (["run", "sweep"].includes(subcommand.name())) {
+      if (["run", "sweep", "collect"].includes(subcommand.name())) {
         usageExitCode = EXIT_BAD_INPUT;
       }
     });
@@ -152,6 +183,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       "print the plan and create nothing; needs no token",
       false
     )
+    .option(
+      "--local",
+      "run on this machine's Docker instead of DigitalOcean; needs no token",
+      false
+    )
     .addHelpText("after", RUN_HELP)
     .action(
       async (options: {
@@ -162,6 +198,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         out: string;
         detach: boolean;
         dryRun: boolean;
+        local: boolean;
       }) => {
         exitCode = await runRunCommand(options, deps);
       }
@@ -193,6 +230,42 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         exitCode = await runSweepCommand(options, deps);
       }
     );
+
+  program
+    .command("collect")
+    .description(
+      "Follow a detached run, download its results, write report.json and delete everything."
+    )
+    .argument("<run-id>", "the run id that run --detach printed")
+    .option("--wait", "only wait for the run to end; never delete", false)
+    .option("--out <dir>", "where the run's files go", ".perfkit")
+    .option(
+      "--timeout <duration>",
+      "give up waiting after this, like 5h50m or 90m (exit 4)",
+      DEFAULT_COLLECT_TIMEOUT
+    )
+    .addHelpText("after", COLLECT_HELP)
+    .action(
+      async (
+        runId: string,
+        options: { wait: boolean; out: string; timeout: string }
+      ) => {
+        exitCode = await runCollectCommand({ runId, ...options }, deps);
+      }
+    );
+
+  program
+    .command("agent", { hidden: true })
+    .description("Drive a run's load on its load generator (internal).")
+    .requiredOption("--run <run-id>", "the run id")
+    .option("--root <dir>", "the run's root", REMOTE_ROOT)
+    .action(async (options: { run: string; root: string }) => {
+      const outcome = await deps.infra.runAgent({
+        root: options.root,
+        runId: options.run
+      });
+      exitCode = outcome.status === "done" ? EXIT_VALID : EXIT_INFRA;
+    });
 
   program
     .command("render")

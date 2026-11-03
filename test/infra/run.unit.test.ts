@@ -29,7 +29,7 @@ const PLAN = `plan for Routr 2.31.5 (dry run, nothing created)
   images     fonoster/routr-edgeport:2.31.5@sha256:4f1c…e2a0
              fonoster/routr-echo:2.31.5@sha256:41ab…77d0
              fonoster/routr-one:2.31.5@sha256:9b07…1d3c
-  benchmarks edgeport-echo (capacity, up to 100 min at 50 to 5,000 calls/s)
+  benchmarks edgeport-echo (capacity, up to 100 min at 50 to 5,000 messages/s)
              one-soak (soak, 6 h 30 min)
   deleted    at the end, or by sweep after 9h
 `;
@@ -319,12 +319,12 @@ describe("perfkit run", () => {
     });
 
     it("should delete the same resources and exit 3 when the body throws", async () => {
-      // Arrange: the default executor, until the orchestration lands
-      const { notImplementedExecutor } =
-        await import("../../src/cli/notImplementedExecutor.js");
+      // Arrange
       const infra = infraDeps({
         env: { DIGITALOCEAN_TOKEN: TOKEN },
-        executeBenchmarks: notImplementedExecutor
+        executeBenchmarks: async () => {
+          throw new Error("could not start the agent: exit 1");
+        }
       });
 
       // Act
@@ -333,7 +333,7 @@ describe("perfkit run", () => {
       // Assert
       expect(result.code).to.equal(3);
       expect(result.err).to.equal(
-        `perfkit: benchmarks are not implemented yet. ${DELETED}\n`
+        `perfkit: could not start the agent: exit 1. ${DELETED}\n`
       );
       expect(infra.account.leftovers()).to.deep.equal(ALL_GONE);
     });

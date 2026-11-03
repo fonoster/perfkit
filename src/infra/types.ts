@@ -154,6 +154,23 @@ export interface SshTools {
     /** Ends the command early; it then resolves with code 255. */
     signal?: AbortSignal;
   }): Promise<SshResult>;
+  /** Copies a local file or directory to `remotePath` (`scp -r`). */
+  upload(input: {
+    host: string;
+    privateKey: string;
+    localPath: string;
+    remotePath: string;
+    timeoutMs: number;
+  }): Promise<SshResult>;
+  /** Copies `remotePath` on the host to `localPath` (`scp -r`). */
+  download(input: {
+    host: string;
+    privateKey: string;
+    remotePath: string;
+    localPath: string;
+    timeoutMs: number;
+    signal?: AbortSignal;
+  }): Promise<SshResult>;
 }
 
 /** The SSH identity a run logs in with. */

@@ -1,0 +1,36 @@
+apiVersion: perfkit/v1
+project:
+  name: Minimal
+  repo: fonoster/perfkit
+  siteUrl: https://fonoster.github.io/perfkit/benchmarks
+  accent: "#5FCFCE"
+  title: How many SIP MESSAGEs a SIPp UAS answers.
+  lead: A template for a project's perf/ folder. The server under test is a SIPp UAS that answers every MESSAGE with 200 OK, so the run needs no image of its own.
+infra:
+  provider: digitalocean
+  region: nyc3
+  uut: { size: c-2 }
+  loadgen: { size: c-4 }
+  maxLifetime: 2h
+images:
+  uas: pumpagubben/sipp          # run with --target-version 3.7.3
+benchmarks:
+  - id: sipp-uas
+    kind: capacity
+    title: SIPp UAS
+    narrative:
+      what: A SIPp UAS that answers every SIP MESSAGE with 200 OK, standing in for a real server.
+      why: It shows the whole harness, from compose up to report.json, on a server with no setup.
+      how: SIPp sends MESSAGE requests over UDP, starting at 50 messages/s and adding 50 every minute up to 200. The run stops at the first step where p99 MESSAGE-to-200 latency reaches 50 ms or failed requests reach 0.1%.
+    uut:
+      compose: sipp-uas/compose.yaml
+      processes:
+        - { name: uas, match: "uas_message\\.xml" }
+    load:
+      tool: sipp
+      transport: udp
+      port: 5062
+      uac: { scenario: sipp-uas/uac_message.xml }
+      unit: messages
+      rate: { start: 50, step: 50, every: 60s, max: 200 }
+    thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1 }

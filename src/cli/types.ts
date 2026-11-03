@@ -6,10 +6,13 @@ import type {
   Now,
   RegistryClient,
   RunContext,
+  RunProgram,
   SignalSource,
   Sleep,
   SshTools
 } from "../infra/index.js";
+import type { AgentOutcome } from "../orchestrate/createAgent.js";
+import type { PerfkitConfig } from "../schemas/index.js";
 import type { RenderSiteDeps } from "../render/types.js";
 import type { ValidateFileDeps } from "../validate/types.js";
 
@@ -17,19 +20,27 @@ export const EXIT_OK = 0;
 export const EXIT_NOT_PASSED = 1;
 export const EXIT_BAD_INPUT = 2;
 export const EXIT_INFRA = 3;
+export const EXIT_RUNNING = 4;
 export const EXIT_CANCELLED = 130;
 
 /** `run` options the executor needs beyond the provisioned run. */
 export interface RunOptions {
   out: string;
   detach: boolean;
+  /** The perfkit.yaml file and its parsed content. */
+  configPath: string;
+  config: PerfkitConfig;
+  /** The command line, for report.json. */
+  command: string;
+  /** The run-only private key the agent logs in to the UUT with. */
+  agentKey: string;
 }
 
 /**
- * Runs the plan's benchmarks on a provisioned run. The orchestration issue
- * provides the real one; `passed` is false when at least one benchmark did
- * not pass (exit 1). With `--detach` it calls `ctx.handOff()` once its agent
- * has started.
+ * Starts the benchmarks on a provisioned run. The real one copies the
+ * project and the CLI's package to the droplets, starts the agent and calls
+ * `ctx.handOff()`; `run` then collects. One that never hands off ran the
+ * benchmarks itself: `passed` false is exit 1.
  */
 export type BenchmarkExecutor = (
   ctx: RunContext,
@@ -48,7 +59,18 @@ export interface InfraCliDeps {
   getPublicIp: () => Promise<string>;
   createDoClient: (token: string) => DoClient;
   ssh: SshTools;
-  executeBenchmarks: BenchmarkExecutor;
+  /** Local programs: `sh -c` with --local. */
+  runProgram: RunProgram;
+  /** The home directory; run keys and local runs live in ~/.perfkit/runs. */
+  home: string;
+  /** The directory of perfkit's own package.json, uploaded to the agent. */
+  packageRoot: string;
+  /** Containers are named `<prefix>-<run id>-<what>`; default `perfkit`. */
+  namePrefix: string;
+  /** The real executor when not set. */
+  executeBenchmarks?: BenchmarkExecutor;
+  /** `perfkit agent`, on the load generator. */
+  runAgent: (input: { root: string; runId: string }) => Promise<AgentOutcome>;
 }
 
 export interface CliDeps extends ValidateFileDeps, RenderSiteDeps {

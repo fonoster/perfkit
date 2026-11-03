@@ -4,8 +4,9 @@
  */
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { notImplementedExecutor } from "./cli/notImplementedExecutor.js";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runCli } from "./cli/runCli.js";
 import { EXIT_CANCELLED } from "./cli/types.js";
 import {
@@ -15,6 +16,12 @@ import {
   createSshTools,
   runProgram
 } from "./infra/index.js";
+import { createAgent } from "./orchestrate/createAgent.js";
+import { createAgentShell } from "./orchestrate/createAgentShell.js";
+import { createDockerEngine } from "./orchestrate/createDockerEngine.js";
+import { createNodeAgentFs } from "./orchestrate/createNodeAgentFs.js";
+import { runPaths } from "./orchestrate/paths.js";
+import { runStateSchema } from "./orchestrate/runState.schema.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -59,7 +66,30 @@ const code = await runCli(process.argv, {
     getPublicIp: createGetPublicIp({ fetch }),
     createDoClient: (token) => createDoClient({ token, fetch }),
     ssh: createSshTools({ run: runProgram }),
-    executeBenchmarks: notImplementedExecutor
+    runProgram,
+    home: homedir(),
+    packageRoot: join(dirname(fileURLToPath(import.meta.url)), ".."),
+    namePrefix: process.env.PERFKIT_NAME_PREFIX || "perfkit",
+    runAgent: async ({ root, runId }) => {
+      const fs = createNodeAgentFs();
+      const paths = runPaths(root);
+      const state = runStateSchema.parse(
+        JSON.parse(await fs.readFile(paths.runJson))
+      );
+      return createAgent({
+        shell: createAgentShell({
+          engine: createDockerEngine("/var/run/docker.sock"),
+          state
+        }),
+        fs,
+        now: () => Date.now(),
+        sleep,
+        log: async (line) => {
+          process.stdout.write(`${line}\n`);
+          await fs.appendFile(paths.progress, `${line}\n`);
+        }
+      })({ root, runId });
+    }
   },
   writeFile: async (path, text) => {
     await mkdir(dirname(path), { recursive: true });

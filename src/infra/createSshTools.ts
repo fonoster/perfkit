@@ -91,6 +91,47 @@ export function createSshTools(deps: { run: RunProgram }): SshTools {
           [...SSH_OPTIONS, "-i", keyFile, `root@${host}`, command],
           { timeoutMs, signal }
         )
+      ),
+
+    upload: ({ host, privateKey, localPath, remotePath, timeoutMs }) =>
+      withKeyFile(privateKey, (keyFile) =>
+        deps.run(
+          "scp",
+          [
+            ...SSH_OPTIONS,
+            "-q",
+            "-r",
+            "-i",
+            keyFile,
+            localPath,
+            `root@${host}:${remotePath}`
+          ],
+          { timeoutMs }
+        )
+      ),
+
+    download: ({
+      host,
+      privateKey,
+      remotePath,
+      localPath,
+      timeoutMs,
+      signal
+    }) =>
+      withKeyFile(privateKey, (keyFile) =>
+        deps.run(
+          "scp",
+          [
+            ...SSH_OPTIONS,
+            "-q",
+            "-r",
+            "-i",
+            keyFile,
+            `root@${host}:${remotePath}`,
+            localPath
+          ],
+          { timeoutMs, signal }
+        )
       )
   };
 }

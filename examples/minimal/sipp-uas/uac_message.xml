@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<!--
+  perfkit capacity scenario: one MESSAGE and its 200 OK. start_rtd="1" on the
+  request and rtd="1" on the 200 OK are what perfkit measures; a 200 OK that
+  has not arrived after 5 s fails the request. perfkit passes no -s: the
+  Request-URI is built here.
+-->
+<scenario name="UAC MESSAGE">
+
+  <send retrans="500" start_rtd="1">
+    <![CDATA[
+
+      MESSAGE sip:uas@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];rport;branch=[branch]
+      Max-Forwards: 70
+      From: "perfkit" <sip:perfkit@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:uas@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 MESSAGE
+      Content-Type: text/plain
+      Content-Length: [len]
+
+      perfkit
+    ]]>
+  </send>
+
+  <recv response="200" rtd="1" timeout="5000" />
+
+</scenario>
