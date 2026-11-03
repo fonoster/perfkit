@@ -52,7 +52,7 @@ const machineSchema = z.strictObject({
 });
 
 const runInfraSchema = z.strictObject({
-  provider: z.literal("digitalocean"),
+  provider: z.enum(["digitalocean", "local"]),
   region: nonEmptyString,
   uut: machineSchema,
   loadgen: machineSchema,

@@ -50,7 +50,7 @@ Rules for both files:
 | `run.version` | string | The `--target-version` the run tested, like `2.31.5`. |
 | `run.commit` | string | The project's git commit, 7 to 40 hex digits. |
 | `run.startedAt`, `run.endedAt` | timestamp | |
-| `run.infra.provider` | `digitalocean` | |
+| `run.infra.provider` | `digitalocean` or `local` | `local` for `perfkit run --local`, where both roles run on one machine's Docker; sizes then read `local`. |
 | `run.infra.region` | string | |
 | `run.infra.uut`, `run.infra.loadgen` | object | `size` (slug), `vcpus` and `memoryMB` of each droplet. |
 | `run.infra.os` | string | The droplets' OS, like `Ubuntu 24.04`. |

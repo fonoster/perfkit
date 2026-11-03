@@ -78,7 +78,10 @@
           "properties": {
             "provider": {
               "type": "string",
-              "const": "digitalocean"
+              "enum": [
+                "digitalocean",
+                "local"
+              ]
             },
             "region": {
               "type": "string",
