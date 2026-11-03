@@ -12,13 +12,16 @@ HTML report page. Each project keeps only its benchmark definitions in a `perf/`
 
 ## Commands
 
-The scaffold issue creates these; until then the repo has no package.json.
+Node 22 (`.nvmrc`).
 
 - Install: `npm ci`.
 - Build: `npm run build`.
 - Unit tests: `npm test` (`test/**/*.unit.test.ts`). They never reach the network and never
   read `DIGITALOCEAN_TOKEN`.
-- Typecheck: `npm run typecheck`. Lint: `npm run lint`.
+- Typecheck: `npm run typecheck`. Lint: `npm run lint` (ESLint and Prettier).
+- JSON Schema files: `npm run schemas` rewrites `schemas/*.schema.json` from `src/schemas`;
+  commit the result. A unit test fails when they drift.
+- Check a file: `npx tsx src/cli.ts validate <perfkit.yaml|report.json|runs.json>`.
 - A real run costs money: `DIGITALOCEAN_TOKEN=... npx perfkit run --config <perfkit.yaml>
   --target-version <tag>`. Not gated in CI.
 
@@ -33,6 +36,10 @@ Overrides:
 - No database and no Prisma: state is files (`report.json`, `runs.json`).
 - No tRPC: the surfaces are the CLI and the reusable workflow.
 - `perfkit.yaml` is validated with Zod (the same schemas export the JSON Schema files).
+- No logger: the CLI's output lines and exit codes are its contract, so functions return
+  results instead of logging them.
+- No husky or lint-staged: CI (`.github/workflows/test.yaml`) runs typecheck, lint and tests on
+  every pull request.
 
 ## Areas
 
