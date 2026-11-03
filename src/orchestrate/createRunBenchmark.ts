@@ -13,6 +13,7 @@ import {
   SIPP_IMAGE
 } from "../tools.js";
 import { buildComposeEnv } from "./buildComposeEnv.js";
+import { countRegistered } from "./countRegistered.js";
 import {
   buildSippRoles,
   countUserRows,
@@ -32,6 +33,8 @@ import {
   HEALTH_TIMEOUT_MS,
   MAX_FAILED_CHECKS,
   nameOf,
+  REGISTER_GRACE_MS,
+  REGISTER_POLL_MS,
   REGISTER_RATE,
   SIPP_START_TIMEOUT_MS,
   STEP_GRACE_MS,
@@ -104,6 +107,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const roles = buildSippRoles({
       benchmark,
       uutIp: state.hosts.uutIp,
+      loadgenIp: state.hosts.loadgenIp,
       registerUsers
     });
 
@@ -129,8 +133,17 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       if (benchmark.telemetry.otlp) {
         await startCollector(rawDir, containers.otelcol);
       }
-      const startedMs = await startSipp(roles, rawDir, containers.sipp);
-      const monitored = await monitor(benchmark, rawDir, startedMs);
+      const started = await startSipp(
+        benchmark.id,
+        roles,
+        rawDir,
+        containers.sipp,
+        registerUsers
+      );
+      const startedMs = started.startedMs;
+      const monitored = started.aborted
+        ? { steps: 0, aborted: started.aborted }
+        : await monitor(benchmark, rawDir, startedMs);
       const endedMs = deps.now();
       await Promise.all(
         [...roles]
@@ -301,12 +314,19 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     }
   }
 
-  /** Starts the roles in order and returns SIPp's StartTime of the uac. */
+  /**
+   * Starts the roles in order and returns SIPp's StartTime of the uac. With
+   * a register role, the uac starts only once every callee has registered;
+   * when they have not within `users / REGISTER_RATE` + 60 s, the uac never
+   * starts and the benchmark is aborted with how many did.
+   */
   async function startSipp(
+    benchmarkId: string,
     roles: SippRoleSpec[],
     rawDir: string,
-    container: (role: string) => string
-  ): Promise<number> {
+    container: (role: string) => string,
+    registerUsers: number
+  ): Promise<{ startedMs: number; aborted: string | null }> {
     const startRole = async (spec: SippRoleSpec) => {
       const out = await run(
         "loadgen",
@@ -330,23 +350,64 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           `could not start SIPp (${spec.role}): ${lastLine(out.stderr, `exit ${out.code}`)}`
         );
       }
-      const registerArgs = spec.args.indexOf("-m");
-      if (spec.role === "register" && registerArgs !== -1) {
-        const users = Number(spec.args[registerArgs + 1]);
-        await deps.sleep((Math.ceil(users / REGISTER_RATE) + 2) * 1000);
-      }
     };
-    await roles.reduce(
+    const uac = roles.find(({ role }) => role === "uac") as SippRoleSpec;
+    const callees = roles.filter(({ role }) => role !== "uac");
+    await callees.reduce(
       (previous, spec) => previous.then(() => startRole(spec)),
       Promise.resolve()
     );
-    const uac = roles.find(({ role }) => role === "uac") as SippRoleSpec;
-    return sippStartTime(
+    const register = callees.find(({ role }) => role === "register");
+    if (register && registerUsers > 0) {
+      const timeoutMs =
+        Math.ceil(registerUsers / REGISTER_RATE) * 1000 + REGISTER_GRACE_MS;
+      const registered = await waitForRegistrations(
+        rawDir,
+        register.scenario,
+        registerUsers,
+        deps.now() + timeoutMs
+      );
+      if (registered < registerUsers) {
+        return {
+          startedMs: deps.now(),
+          aborted: `only ${registered} of ${registerUsers} callees registered within ${Math.round(timeoutMs / 1000)} s, so no call was placed`
+        };
+      }
+      await deps.log(`[${benchmarkId}] ${registerUsers} callees registered`);
+    }
+    await startRole(uac);
+    const startedMs = await sippStartTime(
       rawDir,
       uac.scenario,
       deps.now(),
       deps.now() + SIPP_START_TIMEOUT_MS
     );
+    return { startedMs, aborted: null };
+  }
+
+  /**
+   * Polls the register scenario's counts file until it shows `users`
+   * registrations or the deadline passes; returns the last count read.
+   */
+  async function waitForRegistrations(
+    rawDir: string,
+    scenario: string,
+    users: number,
+    deadline: number
+  ): Promise<number> {
+    const base = basename(scenario).replace(/\.xml$/i, "");
+    const names = await deps.fs.readdir(rawDir).catch(() => [] as string[]);
+    const file = names.find(
+      (name) => name.startsWith(`${base}_`) && name.endsWith("_counts.csv")
+    );
+    const registered = file
+      ? countRegistered(
+          await deps.fs.readFile(`${rawDir}/${file}`).catch(() => "")
+        )
+      : 0;
+    if (registered >= users || deps.now() >= deadline) return registered;
+    await deps.sleep(REGISTER_POLL_MS);
+    return waitForRegistrations(rawDir, scenario, users, deadline);
   }
 
   async function sippStartTime(

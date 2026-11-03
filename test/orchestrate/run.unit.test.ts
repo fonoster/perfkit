@@ -57,13 +57,13 @@ describe("perfkit run (orchestration)", () => {
     );
     expect(uac).to.include(SIPP_IMAGE);
     expect(uac).to.match(
-      / 10\.116\.0\.\d+:5062 -sf \/project\/sipp-uas\/uac_message\.xml -p 5080 /
+      / 10\.116\.0\.\d+:5062 -sf \/project\/sipp-uas\/uac_message\.xml -i 10\.116\.0\.\d+ -p 5080 /
     );
     expect(uac).to.include(
       "-r 50 -rp 1000 -rate_increase 50 -rate_interval 60 -rate_max 200 -no_rate_quit -l 2000 -d 0"
     );
     expect(uac).to.include(
-      "-t u1 -buff_size 4194304 -trace_rtt -rtt_freq 1000 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes"
+      "-t u1 -buff_size 4194304 -trace_rtt -rtt_freq 10 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes"
     );
     const text = await readFile(join(setup.out, runId, "report.json"), "utf8");
     const report = reportSchema.parse(JSON.parse(text));

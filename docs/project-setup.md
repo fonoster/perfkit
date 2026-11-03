@@ -75,12 +75,15 @@ role, with host networking. The `uac` role and the callees send to
 from SIPp's keywords and the users file. Every role gets:
 
 ```text
--t u1 -buff_size 4194304 -trace_rtt -rtt_freq 1000 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes -nostdin
--cid_str <role>-%u-%p@%s
+-t u1 -buff_size 4194304 -trace_rtt -rtt_freq 10 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes -nostdin
+-i <PERFKIT_LOADGEN_IP> -cid_str <role>-%u-%p@%s
 ```
 
 The Call-ID prefix tells the roles' calls apart: each SIPp runs as PID 1 in its container, so the
-default Call-IDs would collide.
+default Call-IDs would collide. `-i` binds SIPp to the load generator's private address, so
+`[local_ip]` in a scenario is that address (`127.0.0.1` with `--local`), never one SIPp guesses
+from the host name, which can be the public or an IPv6 address. SIPp writes its response times
+every `-rtt_freq` calls and drops the ones it holds when it exits, so the value is small.
 
 | Role | Port | Flags |
 | :--- | :--- | :--- |
@@ -96,6 +99,12 @@ records a registration at the address of the REGISTER's top Via, not at its Cont
 that registers has to be the one that answers. Its stat files are named after the register
 scenario.
 
+**The uac starts after the callees have registered.** perfkit starts the callees first, then
+reads their counts file (`<register scenario>_<pid>_counts.csv`, written every 10 s) until the
+highest `<index>_200_Recv` counter reaches the number of users, so the first INVITEs never reach
+an unregistered callee. When it doesn't within `users / 20` + 60 seconds (70 s for 200 users),
+the uac never starts and the benchmark is aborted with how many registered.
+
 What a scenario must do:
 
 - The request perfkit measures carries `start_rtd="1"` on its `<send>`, and its 200 OK carries
@@ -107,7 +116,14 @@ What a scenario must do:
   perfkit needs, such as the callee in `[field2]`.
 - A register scenario loops for ever: REGISTER, its 200 OK, a pause of `refresh_ms`, and again.
   `expires`, `refresh_ms` and `uas_port` are `-key` values, used as `[expires]`,
-  `[refresh_ms]` and `[uas_port]`.
+  `[refresh_ms]` and `[uas_port]`. Each turn of the loop is a new transaction, so give its Via a
+  new branch: SIPp's `[branch]` depends only on the message's place in the scenario, and a
+  server takes a REGISTER with the branch of an earlier one for a retransmission. Use
+  `branch=[branch]-[cseq]`.
+- The uas scenario sees every message of the dialog: answer the INVITE, take the ACK, wait for
+  the BYE and answer it, then stay a few seconds (`<pause milliseconds="…"/>`) so a
+  retransmitted BYE finds the call instead of starting a new one. A retransmission SIPp has
+  already answered is answered again on its own.
 
 Two SIPp 3.7 limits to work with, not against:
 

@@ -13,7 +13,11 @@ import {
 /** Where the project is mounted in a SIPp container. */
 export const SIPP_PROJECT_DIR = "/project";
 
-/** The flags perfkit passes every SIPp role. */
+/**
+ * The flags perfkit passes every SIPp role. SIPp writes its response times
+ * every `-rtt_freq` calls and drops the ones it holds when it exits, so the
+ * value stays small: at most 9 calls go unmeasured at the end of a run.
+ */
 export const SIPP_COMMON_FLAGS = [
   "-t",
   "u1",
@@ -21,7 +25,7 @@ export const SIPP_COMMON_FLAGS = [
   "4194304",
   "-trace_rtt",
   "-rtt_freq",
-  "1000",
+  "10",
   "-trace_stat",
   "-fd",
   "10",
@@ -42,6 +46,8 @@ export interface SippRoleSpec {
 export interface SippRolesInput {
   benchmark: BenchmarkConfig;
   uutIp: string;
+  /** The load generator's address: SIPp binds to it (`-i`), so it is [local_ip]. */
+  loadgenIp: string;
   /** Rows of the register users file, after its first line. */
   registerUsers: number;
 }
@@ -51,8 +57,10 @@ export interface SippRolesInput {
  * Contract's flags: a capacity benchmark has only the uac; a soak has its
  * callees (the register scenario, answering INVITEs with the uas scenario
  * through `-oocsf`, on port 5070) before its uac. Each role has its own
- * Call-ID prefix (`-cid_str <role>-%u-%p@%s`). The uac and register
- * roles send to `<UUT IP>:<load.port>`; no role gets `-s`. The hold is `-d`.
+ * Call-ID prefix (`-cid_str <role>-%u-%p@%s`) and binds to the load
+ * generator's address (`-i`), which scenarios use as [local_ip]. The uac and
+ * register roles send to `<UUT IP>:<load.port>`; no role gets `-s`. The hold
+ * is `-d`.
  */
 export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
   const { benchmark } = input;
@@ -63,6 +71,8 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
   const scenarioFlags = (role: SippRole, scenario: string) => [
     "-sf",
     `${SIPP_PROJECT_DIR}/${scenario}`,
+    "-i",
+    input.loadgenIp,
     "-p",
     String(SIPP_PORTS[role]),
     "-cid_str",

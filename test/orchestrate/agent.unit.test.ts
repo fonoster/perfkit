@@ -2,7 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { expect } from "chai";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ValidationError } from "../../src/errors/index.js";
 import { createNodeAnalyzeDeps } from "../../src/analyze/index.js";
@@ -32,6 +32,19 @@ async function detached(args: string[], files: RawFiles, routr = false) {
 }
 
 const ROUTR = ["run", "--config", ROUTR_CONFIG, "--target-version", "2.31.5"];
+/** Gives the uploaded one-soak project 200 callees (the example's file is empty). */
+async function withCallees(setup: Awaited<ReturnType<typeof doSetup>>) {
+  const rows = Array.from(
+    { length: 200 },
+    (_, i) =>
+      `callee${i};pass${i};[authentication username=callee${i} password=pass${i}]`
+  );
+  await writeFile(
+    join(setup.hosts.roots.loadgen, "project", "one-soak", "callees.csv"),
+    ["SEQUENTIAL", ...rows, ""].join("\n")
+  );
+}
+
 const agentCommands = (setup: Awaited<ReturnType<typeof doSetup>>) =>
   setup.hosts.commands.filter(({ by }) => by === "agent");
 
@@ -161,6 +174,72 @@ describe("createAgent", () => {
     expect(
       "resources" in result && result.resources?.processes.length
     ).to.equal(3);
+  });
+
+  it("should start the soak uac only after every callee has registered", async () => {
+    // Arrange
+    const setup = await detached(
+      [...ROUTR, "--benchmarks", "one-soak"],
+      soakRaw({ warmupS: 1800, afterS: 21600 }),
+      true
+    );
+    await withCallees(setup);
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    const register = commands.findIndex((c) => c.includes("-sipp-register "));
+    const uac = commands.findIndex((c) => c.includes("-sipp-uac "));
+    expect(register).to.be.greaterThan(-1);
+    expect(uac).to.be.greaterThan(register);
+    const progress = await readFile(
+      join(setup.hosts.roots.loadgen, "progress.log"),
+      "utf8"
+    );
+    expect(progress).to.include("[one-soak] 200 callees registered");
+  });
+
+  it("should abort a soak without starting its uac when the callees don't all register in time", async () => {
+    // Arrange
+    const setup = await detached(
+      [...ROUTR, "--benchmarks", "one-soak"],
+      soakRaw({ warmupS: 1800, afterS: 21600, registered: 150 }),
+      true
+    );
+    await withCallees(setup);
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    expect(
+      commands.some((c) => c.includes("-sipp-uac ") && c.includes("run -d"))
+    ).to.equal(false);
+    const raw = join(setup.hosts.roots.loadgen, "raw", "one-soak");
+    const reason =
+      "only 150 of 200 callees registered within 70 s, so no call was placed";
+    expect((await readFile(join(raw, "aborted"), "utf8")).trim()).to.equal(
+      reason
+    );
+    expect(await readFile(join(raw, "done"), "utf8")).to.match(/^\d{4}-/);
+    const state = runStateSchema.parse(
+      JSON.parse(
+        await readFile(join(setup.hosts.roots.loadgen, "run.json"), "utf8")
+      )
+    );
+    const result = await analyzeBenchmark(
+      createNodeAnalyzeDeps(),
+      state.plan.benchmarks[0]!,
+      raw,
+      null,
+      "SIPp 3.7.3, UDP"
+    );
+    expect(result).to.include({ verdict: "aborted", reason });
   });
 
   it("should fail the run when the setup script exits non-zero", async () => {

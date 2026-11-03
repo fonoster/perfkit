@@ -367,6 +367,12 @@ export interface SoakRawSpec {
   /** Failed calls per 10-minute stat row after the warm-up, of 60,000. */
   failedPerRow?: number;
   registerFailedPerRow?: number;
+  /** Calls the uac starts per stat row after the warm-up. Default 60,000. */
+  callsPerRow?: number;
+  /** Leave out the uac's -trace_rtt file. */
+  noRtt?: boolean;
+  /** The register role's 200 OKs in its counts file. Default: 200, all. */
+  registered?: number;
 }
 
 export const SOAK_PROCESSES = ["one", "edgeport", "postgres"];
@@ -393,7 +399,11 @@ export function soakRaw(spec: SoakRawSpec): Record<string, string> {
       })
     );
   }).flat();
-  const statRows = (failedAfter: number, failedDuring: number) =>
+  const statRows = (
+    failedAfter: number,
+    failedDuring: number,
+    callsAfter = 60_000
+  ) =>
     Array.from(
       { length: Math.floor((endMs - START_MS) / SOAK_STAT_MS) + 1 },
       (_, i) => {
@@ -402,7 +412,7 @@ export function soakRaw(spec: SoakRawSpec): Record<string, string> {
         return {
           tMs,
           counters: {
-            "OutgoingCall(P)": i === 0 ? 0 : 60_000,
+            "OutgoingCall(P)": i === 0 ? 0 : after ? callsAfter : 60_000,
             "FailedCall(P)": i === 0 ? 0 : after ? failedAfter : failedDuring,
             "Retransmissions(P)": 0,
             CurrentCall: i === 0 ? 0 : after ? 3000 : 3500
@@ -431,13 +441,18 @@ export function soakRaw(spec: SoakRawSpec): Record<string, string> {
     "meta.json": JSON.stringify(meta),
     "uac_invite_9_.csv": statCsv(
       START_MS,
-      statRows(spec.failedPerRow ?? 0, 50)
+      statRows(spec.failedPerRow ?? 0, 50, spec.callsPerRow)
     ),
-    "uac_invite_9_rtt.csv": rttCsv(START_MS, calls),
+    ...(spec.noRtt ? {} : { "uac_invite_9_rtt.csv": rttCsv(START_MS, calls) }),
     "uac_register_8_.csv": statCsv(
       START_MS,
       statRows(spec.registerFailedPerRow ?? 0, 7)
     ),
+    "uac_register_8_counts.csv": [
+      "CurrentTime;ElapsedTime;0_REGISTER_Sent;2_401_Recv;3_REGISTER_Sent;5_200_Recv;",
+      `${iso(START_MS)};00:00:10:000000;200;200;200;${spec.registered ?? 200};`,
+      ""
+    ].join("\n"),
     "uas_answer_10_.csv": statCsv(START_MS, statRows(0, 0)),
     "sampler.jsonl": sampler.join("\n") + "\n"
   };

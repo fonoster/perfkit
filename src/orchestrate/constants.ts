@@ -44,6 +44,14 @@ export const SIPP_START_TIMEOUT_MS = 60 * 1000;
 export const SAMPLE_INTERVAL_S = 10;
 /** Registrations per second of the register role. */
 export const REGISTER_RATE = 20;
+/** How often the agent reads the register role's counters while it waits. */
+export const REGISTER_POLL_MS = 2 * 1000;
+/**
+ * How long the callees have to register beyond `users / REGISTER_RATE`:
+ * SIPp writes its counters every 10 s (`-fd 10`) and a lost REGISTER is
+ * retransmitted for up to 32 s.
+ */
+export const REGISTER_GRACE_MS = 60 * 1000;
 /** `collect --timeout` default: under GitHub's 6 h job limit. */
 export const DEFAULT_COLLECT_TIMEOUT = "5h50m";
 

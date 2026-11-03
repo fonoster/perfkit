@@ -48,13 +48,17 @@ export const PASSING_STEPS = [50, 100, 150, 200].map((offeredCps) => ({
   offeredCps
 }));
 
-/** SIPp's and the sampler's files, written when the agent starts the uac. */
+/**
+ * SIPp's and the sampler's files, written when the agent starts the uac and,
+ * for a soak, already when it starts the register role, whose counts file the
+ * agent reads before it starts the uac.
+ */
 export type RawFiles =
   Record<string, string> | ((benchmarkId: string) => Record<string, string>);
 
 export function sippWriter(hosts: FakeHosts, files: RawFiles) {
   return async (host: Host, command: string) => {
-    if (!/--name \S+-sipp-uac /.test(command)) return undefined;
+    if (!/--name \S+-sipp-(uac|register) /.test(command)) return undefined;
     const raw = /-v (\S+):\/raw/.exec(command)?.[1] as string;
     const id = raw.slice(raw.lastIndexOf("/") + 1);
     const chosen = typeof files === "function" ? files(id) : files;
