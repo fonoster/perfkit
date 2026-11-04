@@ -25,7 +25,7 @@ with these variables, which the compose file uses as `${PERFKIT_...}`:
 
 | Variable | Value |
 | :--- | :--- |
-| `PERFKIT_IMAGE_<NAME>` | One per entry of `images:`, pinned by digest, like `PERFKIT_IMAGE_EDGEPORT=fonoster/routr-edgeport:2.31.5@sha256:4f1c…`. `<NAME>` is the key in uppercase, any other character turned into `_`. |
+| `PERFKIT_IMAGE_<NAME>` | One per entry of `images:`, pinned by digest, like `PERFKIT_IMAGE_EDGEPORT=fonoster/routr-edgeport:2.31.5@sha256:4f1c…`. `<NAME>` is the key in uppercase, any other character turned into `_`: `edgeportGo` becomes `PERFKIT_IMAGE_EDGEPORTGO`. |
 | `PERFKIT_UUT_IP` | The UUT's private (VPC) IP. |
 | `PERFKIT_LOADGEN_IP` | The load generator's private IP. |
 | `PERFKIT_VPC_CIDR` | The VPC range, like `10.20.0.0/24`. |

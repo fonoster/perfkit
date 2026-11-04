@@ -239,6 +239,34 @@ describe("perfkitConfigSchema", () => {
       ]);
     });
 
+    it("should accept an image entry with a name and a tagSuffix", () => {
+      const raw = loadConfig();
+      raw.images.edgeportGo = {
+        name: "fonoster/routr-edgeport",
+        tagSuffix: "-go-experimental"
+      };
+      const config = perfkitConfigSchema.parse(raw);
+      expect(config.images.edgeportGo).to.deep.equal({
+        name: "fonoster/routr-edgeport",
+        tagSuffix: "-go-experimental"
+      });
+      expect(config.images.edgeport).to.equal("fonoster/routr-edgeport");
+    });
+
+    it("should reject an image entry with a tagged name, a bad tagSuffix or no tagSuffix", () => {
+      const raw = loadConfig();
+      raw.images.tagged = { name: "fonoster/routr-edgeport:2.32.0", tagSuffix: "-go" };
+      raw.images.slash = { name: "fonoster/routr-edgeport", tagSuffix: "/go" };
+      raw.images.empty = { name: "fonoster/routr-edgeport", tagSuffix: "" };
+      raw.images.bare = { name: "fonoster/routr-edgeport" };
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "images.bare: does not match any allowed shape",
+        `images.empty.tagSuffix: expected a tag suffix of letters, digits, '.', '_' or '-'; got ""`,
+        `images.slash.tagSuffix: expected a tag suffix of letters, digits, '.', '_' or '-'; got "/go"`,
+        "images.tagged.name: expected an image name without a tag or digest; the tag comes from --target-version"
+      ]);
+    });
+
     it("should reject a process match that is not a regex", () => {
       const raw = loadConfig();
       raw.benchmarks[0].uut.processes[0].match = "io\\.routr(";

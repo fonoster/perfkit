@@ -63,8 +63,25 @@ const imageNameSchema = nonEmptyString.refine(
   }
 );
 
+/**
+ * One `images` entry: an image name, tagged with `--target-version`, or
+ * `{ name, tagSuffix }`, tagged with `--target-version` followed by
+ * `tagSuffix` (like `2.32.0-go-experimental`).
+ */
+export const imageEntrySchema = z.union([
+  imageNameSchema,
+  z.strictObject({
+    name: imageNameSchema,
+    tagSuffix: z.string().regex(/^[A-Za-z0-9._-]+$/, {
+      error: "expected a tag suffix of letters, digits, '.', '_' or '-'"
+    })
+  })
+]);
+
+export type ImageEntry = z.output<typeof imageEntrySchema>;
+
 const configImagesSchema = z
-  .record(z.string(), imageNameSchema)
+  .record(z.string(), imageEntrySchema)
   .refine((images) => Object.keys(images).length > 0, {
     error: "expected at least one image"
   });

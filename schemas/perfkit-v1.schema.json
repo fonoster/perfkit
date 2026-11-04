@@ -105,8 +105,30 @@
         "type": "string"
       },
       "additionalProperties": {
-        "type": "string",
-        "minLength": 1
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tagSuffix": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+$"
+              }
+            },
+            "required": [
+              "name",
+              "tagSuffix"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "benchmarks": {

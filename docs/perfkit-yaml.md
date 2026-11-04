@@ -46,9 +46,29 @@ Rules for the whole file:
 
 ## images
 
-A map from a short name to an image name without a tag or digest, like
-`edgeport: fonoster/routr-edgeport`. The tag comes from `--target-version`, and perfkit pins each
-image by digest when the run starts. At least one image is required.
+A map from a short name (the key) to an image. At least one image is required. Each entry is
+either:
+
+- An image name without a tag or digest, like `edgeport: fonoster/routr-edgeport`. The tag is
+  `--target-version`.
+- An object `{ name, tagSuffix }`. `name` is an image name without a tag or digest; the tag is
+  `--target-version` followed by `tagSuffix`. `tagSuffix` matches `[A-Za-z0-9._-]+`. With
+  `--target-version 2.32.0`, this entry runs `fonoster/routr-edgeport:2.32.0-go-experimental`:
+
+  ```yaml
+  images:
+    edgeport: fonoster/routr-edgeport
+    edgeportGo:
+      name: fonoster/routr-edgeport
+      tagSuffix: -go-experimental
+  ```
+
+perfkit pins each image by digest when the run starts, so `--dry-run` shows the digests the run
+will use. Each image reaches the Compose file as `PERFKIT_IMAGE_<KEY>`: the key in uppercase,
+with every character other than `A-Z` and `0-9` turned into `_`. Uppercasing removes camelCase,
+so `edgeportGo` becomes `PERFKIT_IMAGE_EDGEPORTGO` (not `EDGEPORT_GO`) and `edgeport-go` becomes
+`PERFKIT_IMAGE_EDGEPORT_GO`. In `report.json`, `run.images` maps each key to the pinned image,
+like `fonoster/routr-edgeport:2.32.0-go-experimental@sha256:…`.
 
 ## benchmarks
 
