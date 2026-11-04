@@ -43,8 +43,8 @@ anything (exit 2):
 perfkit: sipp-uas/compose.yaml: service uas must use network_mode: host (Docker's UDP port publishing distorts the results); nothing was created
 ```
 
-The firewall lets SIP in on 5060 to 5063 (UDP and TCP) and OTLP on 4318 from the VPC, so the
-server listens on a port in that range.
+The firewall lets every TCP and UDP port (and ICMP) in from the VPC, so the server can listen on
+any port, and SSH from the runner and the VPC. Nothing else reaches the droplets.
 
 **Healthchecks.** The UUT is up when every service is `running`, and `healthy` when it has a
 `healthcheck`, within 5 minutes; otherwise the run ends with exit 3. Give a service a healthcheck

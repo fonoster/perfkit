@@ -15,6 +15,7 @@ export {
 } from "./analyzeSoak.schema.js";
 export { computeHops } from "./computeHops.js";
 export { countRestarts } from "./countRestarts.js";
+export { capacityStepWindow } from "./capacityStepWindow.js";
 export { cpuPctOver } from "./cpuPctOver.js";
 export { createAnalyzeCapacity } from "./createAnalyzeCapacity.js";
 export {

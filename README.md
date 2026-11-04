@@ -127,8 +127,8 @@ the end. In `infra.region` of `perfkit.yaml`, it creates, in this order:
    collide;
 3. two `ubuntu-24-04-x64` droplets in it, `perfkit-<run id>-uut` and
    `perfkit-<run id>-loadgen`, tagged `perfkit` and `perfkit-run-<run id>`;
-4. a firewall, `perfkit-<run id>`: SIP (5060-5063 tcp/udp) and OTLP (4318 tcp) from the VPC only,
-   SSH (22) from this machine's public IP (from `https://api.ipify.org`) and from the VPC, where the agent on the load generator reaches the server under test.
+4. a firewall, `perfkit-<run id>`: from the VPC: all ports (tcp and udp) and icmp, so the load
+   generator reaches the server's API and the server reaches the callees; SSH (22) from this machine's public IP (from `https://api.ipify.org`) and from the VPC, where the agent on the load generator reaches the server under test.
 
 Both droplets get Docker Engine with the compose plugin, 25 MiB socket buffers
 (`net.core.rmem_max`, `wmem_max`, `rmem_default`, `wmem_default`) and 1048576 open files, through
@@ -161,7 +161,7 @@ plan for Routr 2.31.6 (dry run, nothing created)
   region     nyc3, new VPC (range assigned by DigitalOcean)
   uut        c-8   ubuntu-24-04-x64
   loadgen    c-16  ubuntu-24-04-x64
-  firewall   SIP (5060-5063 tcp/udp) and OTLP (4318 tcp) from the VPC only; SSH (22) from 203.0.113.7 and the VPC only
+  firewall   from the VPC: all ports (tcp/udp) and icmp; SSH (22) from 203.0.113.7 and the VPC only
   tags       perfkit, perfkit-run-20261103T141210Z-bd3254a
   images     fonoster/routr-edgeport:2.31.6@sha256:8bca…1866
              fonoster/routr-echo:2.31.6@sha256:14a4…a43f
@@ -364,6 +364,10 @@ SIPp adds load in steps, such as 50 more calls/s every minute. For each step:
   in the next one.
 - Its attempted, failed and retransmitted calls are SIPp's 10-second counters (`-trace_stat`)
   that fall in the step. Failed % is failed / attempted.
+- **Warm-up.** With `warmup` set, the first step still runs its full `every`, but it is measured
+  only from `warmup` after it starts: calls sent, and 10-second counters whose period mid-point
+  falls, before that don't count. A cold JIT (EdgePort's JVM and GraalJS) makes the first seconds
+  slow; the later steps are measured whole.
 
 perfkit checks the steps in order:
 

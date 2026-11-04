@@ -12,11 +12,6 @@ export const PERFKIT_TAG = "perfkit";
 /** Name of the SSH key that PERFKIT_SSH_KEY registers; never deleted. */
 export const SHARED_KEY_NAME = "perfkit-shared";
 
-/** SIP from the VPC. */
-export const SIP_PORTS = "5060-5063";
-/** OTLP/HTTP from the VPC. */
-export const OTLP_PORT = "4318";
-
 /** Droplets active and cloud-init finished within this, or exit 3. */
 export const READY_TIMEOUT_MS = 10 * 60 * 1000;
 /** How long teardown waits for a VPC to have no members. */

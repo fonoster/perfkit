@@ -73,7 +73,7 @@ describe("buildCloudInit", () => {
 });
 
 describe("buildFirewall", () => {
-  it("should open SIP and OTLP to the VPC, SSH to the sources, and all outbound", () => {
+  it("should open every tcp/udp port and icmp to the VPC, SSH to the sources, and all outbound", () => {
     // Act
     const firewall = buildFirewall({
       name: "perfkit-x",
@@ -89,9 +89,9 @@ describe("buildFirewall", () => {
           `${protocol} ${ports} ${sources.addresses?.join(",")}`
       )
     ).to.deep.equal([
-      "udp 5060-5063 10.1.0.0/20",
-      "tcp 5060-5063 10.1.0.0/20",
-      "tcp 4318 10.1.0.0/20",
+      "tcp all 10.1.0.0/20",
+      "udp all 10.1.0.0/20",
+      "icmp undefined 10.1.0.0/20",
       "tcp 22 203.0.113.7/32,10.1.0.0/20"
     ]);
     expect(

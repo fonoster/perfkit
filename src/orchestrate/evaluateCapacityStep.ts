@@ -3,6 +3,7 @@
  */
 import { join } from "node:path";
 import {
+  capacityStepWindow,
   measureCapacityStep,
   parseSamplerJsonl,
   parseUdpJsonl,
@@ -52,10 +53,12 @@ export async function evaluateCapacityStep(input: {
     names.includes(file) ? deps.readFile(join(rawDir, file)) : "";
   const measured = measureCapacityStep({
     offeredCps,
-    window: {
-      fromMs: input.startMs + index * everyMs,
-      toMs: input.startMs + (index + 1) * everyMs
-    },
+    window: capacityStepWindow({
+      startedMs: input.startMs,
+      index,
+      everyMs,
+      warmupMs: durationMs(benchmark.warmup)
+    }),
     uac,
     samples: parseSamplerJsonl(
       await read("sampler-loadgen.jsonl"),
