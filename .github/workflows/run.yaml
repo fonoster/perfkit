@@ -85,7 +85,7 @@ jobs:
           args=(run --config "$CONFIG" --target-version "$TARGET_VERSION" --commit "$COMMIT" --detach)
           if [ -n "$BENCHMARKS" ]; then args+=(--benchmarks "$BENCHMARKS"); fi
           npx -y "$PERFKIT" "${args[@]}" | tee start.log
-          run_id=$(sed -n 's/^run \([0-9TZ-]*\) started;.*/\1/p' start.log)
+          run_id=$(sed -n 's/^run \([0-9A-Za-z-]*\) started;.*/\1/p' start.log)
           test -n "$run_id"
           echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
 
@@ -193,7 +193,7 @@ jobs:
           npx -y "$PERFKIT" collect "$RUN_ID" | tee collect.log
           code=${PIPESTATUS[0]}
           set -e
-          verdict=$(sed -n 's/^report .*(\(.* benchmarks passed\))$/\1/p' collect.log)
+          verdict=$(sed -n 's/^report .*(\([0-9]* of [0-9]* benchmarks\{0,1\} passed[^)]*\))$/\1/p' collect.log)
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
           exit "$code"
       - uses: actions/upload-artifact@v4
