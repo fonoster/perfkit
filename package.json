@@ -1,6 +1,6 @@
 {
   "name": "perfkit",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Benchmark harness for Fonoster projects: DigitalOcean runs, one report.json schema, one branded report page",
   "license": "MIT",
   "author": "Pedro Sanders <psanders@fonoster.com>",

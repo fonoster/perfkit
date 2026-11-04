@@ -125,7 +125,7 @@ the end. In `infra.region` of `perfkit.yaml`, it creates, in this order:
 1. an SSH key (see `PERFKIT_SSH_KEY` below);
 2. a new VPC, `perfkit-<run id>`, whose range DigitalOcean assigns, so parallel runs never
    collide;
-3. two `ubuntu-24-04-x64` droplets in it, `perfkit-<run id>-uut` and
+3. two `ubuntu-22-04-x64` droplets in it, `perfkit-<run id>-uut` and
    `perfkit-<run id>-loadgen`, tagged `perfkit` and `perfkit-run-<run id>`;
 4. a firewall, `perfkit-<run id>`: from the VPC: all ports (tcp and udp) and icmp, so the load
    generator reaches the server's API and the server reaches the callees; SSH (22) from this machine's public IP (from `https://api.ipify.org`) and from the VPC, where the agent on the load generator reaches the server under test.
@@ -159,8 +159,8 @@ digest its tag had when the run started.
 $ npx perfkit run --config perf/perfkit.yaml --target-version 2.31.6 --dry-run
 plan for Routr 2.31.6 (dry run, nothing created)
   region     nyc3, new VPC (range assigned by DigitalOcean)
-  uut        c-8   ubuntu-24-04-x64
-  loadgen    c-16  ubuntu-24-04-x64
+  uut        c-8   ubuntu-22-04-x64
+  loadgen    c-16  ubuntu-22-04-x64
   firewall   from the VPC: all ports (tcp/udp) and icmp; SSH (22) from 203.0.113.7 and the VPC only
   tags       perfkit, perfkit-run-20261103T141210Z-bd3254a
   images     fonoster/routr-edgeport:2.31.6@sha256:8bca…1866

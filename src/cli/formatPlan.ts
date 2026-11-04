@@ -13,7 +13,7 @@ const LABEL_WIDTH = 11;
  * ```
  * plan for Routr 2.31.5 (dry run, nothing created)
  *   region     nyc3, new VPC (range assigned by DigitalOcean)
- *   uut        c-8   ubuntu-24-04-x64
+ *   uut        c-8   ubuntu-22-04-x64
  * ```
  *
  * Digests are shortened to their first and last 4 hex digits.
