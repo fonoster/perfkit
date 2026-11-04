@@ -373,7 +373,8 @@ perfkit checks the steps in order:
 
 1. **Is the measurement valid?** A step is invalid when the load generator, not the server, was
    the bottleneck: SIPp used more than 80% of one core, placed less than 95% of the offered rate,
-   or the load generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
+   placed more than 105% of it (a burst of calls it owed from earlier steps), or the load
+   generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
    names the step and the cause, and no limit is published.
 2. **Does it pass?** A step passes when p99 is **below** `p99LatencyMs` and failed % is **below**
    `failedCallsPct`. Both limits are strict: a p99 of exactly 50 ms breaks a 50 ms limit. The
