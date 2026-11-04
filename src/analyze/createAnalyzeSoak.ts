@@ -15,7 +15,8 @@ import { leastSquaresSlope } from "./leastSquaresSlope.js";
 import { listRawDir } from "./listRawDir.js";
 import { nearestRank } from "./nearestRank.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
-import { parseOtlpSpans } from "./parseOtlpSpans.js";
+import { parseOtlpSpanLines } from "./parseOtlpSpans.js";
+import { readRawLines } from "./readRawLines.js";
 import { parseSamplerJsonl } from "./parseSamplerJsonl.js";
 import { soakMetaSchema } from "./rawResults.schema.js";
 import { readRawFile } from "./readRawFile.js";
@@ -187,7 +188,10 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
     );
     const hops = benchmark.telemetry.otlp
       ? computeHops(
-          parseOtlpSpans(await read("spans.jsonl"), "spans.jsonl"),
+          await parseOtlpSpanLines(
+            await readRawLines(deps, rawDir, names, "spans.jsonl"),
+            "spans.jsonl"
+          ),
           benchmark.telemetry.sampleRatio,
           warmupEndMs
         )

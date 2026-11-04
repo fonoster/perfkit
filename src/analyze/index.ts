@@ -35,7 +35,7 @@ export {
   SIPP_UAC_PROCESS
 } from "./measureCapacityStep.js";
 export { nearestRank } from "./nearestRank.js";
-export { parseOtlpSpans } from "./parseOtlpSpans.js";
+export { parseOtlpSpanLines, parseOtlpSpans } from "./parseOtlpSpans.js";
 export { parseRttCsv } from "./parseRttCsv.js";
 export { parseSamplerJsonl } from "./parseSamplerJsonl.js";
 export { parseStatCsv } from "./parseStatCsv.js";

@@ -4,7 +4,7 @@
 import { expect } from "chai";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseOtlpSpans } from "../../src/analyze/index.js";
+import { parseOtlpSpanLines, parseOtlpSpans } from "../../src/analyze/index.js";
 import { ValidationError } from "../../src/errors/index.js";
 import { FIXTURES, thrown } from "./builders.js";
 
@@ -71,5 +71,44 @@ describe("parseOtlpSpans", () => {
       expect(error).to.be.instanceOf(ValidationError);
       expect(error.message).to.include("startTimeUnixNano");
     });
+  });
+});
+
+describe("parseOtlpSpanLines", () => {
+  async function* streamed(text: string) {
+    yield* text.split("\n");
+  }
+
+  it("should match parseOtlpSpans for lines that arrive one at a time", async () => {
+    // Arrange
+    const text = spansFixture("grpc-hops.jsonl");
+
+    // Act
+    const spans = await parseOtlpSpanLines(streamed(text), "spans.jsonl");
+
+    // Assert
+    expect(spans).to.deep.equal(parseOtlpSpans(text, "spans.jsonl"));
+  });
+
+  it("should throw ValidationError naming the line of a bad span", async () => {
+    // Arrange
+    const bad = JSON.stringify({
+      resourceSpans: [
+        { scopeSpans: [{ spans: [{ traceId: "a", spanId: "b" }] }] }
+      ]
+    });
+    const text = `${spansFixture("grpc-hops.jsonl").trim()}\n\n${bad}\n`;
+    const lines = text.split("\n").filter((line) => line.trim() !== "");
+
+    // Act
+    const error = await parseOtlpSpanLines(streamed(text), "spans.jsonl").then(
+      () => undefined,
+      (caught: Error) => caught
+    );
+
+    // Assert
+    expect(error).to.be.instanceOf(ValidationError);
+    expect(error?.message).to.include(`spans.jsonl line ${lines.length}`);
+    expect(error?.message).to.include("startTimeUnixNano");
   });
 });

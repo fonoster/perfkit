@@ -15,8 +15,38 @@ const SERVER_KINDS = new Set<number | string>([2, "SPAN_KIND_SERVER"]);
  * `service.name`, or `unknown` without one.
  */
 export function parseOtlpSpans(text: string, file: string): Span[] {
-  return parseJsonLines(text, file, otlpLineSchema).flatMap((line) =>
-    (line.resourceSpans ?? []).flatMap((resourceSpans) => {
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .flatMap((line, index) => spansOfLine(line, index, file));
+}
+
+/**
+ * parseOtlpSpans over lines that arrive one at a time, so the whole file is
+ * never one string or one parsed object: an hour of spans passes V8's
+ * 512 MB string limit. An error names the file and the 1-based line.
+ */
+export async function parseOtlpSpanLines(
+  lines: AsyncIterable<string> | Iterable<string>,
+  file: string
+): Promise<Span[]> {
+  const spans: Span[] = [];
+  let index = 0;
+  for await (const line of lines) {
+    if (line.trim() === "") continue;
+    spans.push(...spansOfLine(line, index, file));
+    index += 1;
+  }
+  return spans;
+}
+
+function spansOfLine(line: string, index: number, file: string): Span[] {
+  return parseJsonLines(
+    line,
+    `${file} line ${index + 1}`,
+    otlpLineSchema
+  ).flatMap((parsed) =>
+    (parsed.resourceSpans ?? []).flatMap((resourceSpans) => {
       const serviceName =
         stringAttribute(resourceSpans.resource?.attributes, "service.name") ??
         "unknown";
