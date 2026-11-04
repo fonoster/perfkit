@@ -1,0 +1,218 @@
+# Reusable workflow: one perfkit run, split across jobs because GitHub stops
+# a job at 6 hours. Call it at a tag and pass the same tag as perfkit-ref:
+#
+#   uses: fonoster/perfkit/.github/workflows/run.yaml@v0.1.0
+#   with: { perfkit-ref: v0.1.0, target-version: 2.31.5, commit: ${{ github.sha }} }
+#   secrets: { DIGITALOCEAN_TOKEN: ..., PERFKIT_SSH_KEY: ... }
+#
+# Secrets come only through `secrets:` below, never `secrets: inherit`.
+name: perfkit run
+
+on:
+  workflow_call:
+    inputs:
+      perfkit-ref:
+        description: The perfkit tag this workflow is called at, like v0.1.0.
+        type: string
+        required: true
+      config:
+        description: The project's perfkit.yaml.
+        type: string
+        default: perf/perfkit.yaml
+      target-version:
+        description: The image tag under test, like 2.31.5.
+        type: string
+        required: true
+      commit:
+        description: The commit under test.
+        type: string
+        required: true
+      benchmarks:
+        description: Comma-separated benchmark ids; empty runs them all.
+        type: string
+        default: ""
+    secrets:
+      DIGITALOCEAN_TOKEN:
+        required: true
+      PERFKIT_SSH_KEY:
+        required: true
+    outputs:
+      run-id:
+        description: The run id.
+        value: ${{ jobs.start.outputs.run-id }}
+      verdict:
+        description: Like "2 of 2 benchmarks passed".
+        value: ${{ jobs.finish.outputs.verdict }}
+      artifact:
+        description: The artifact that holds .perfkit/<run id>/.
+        value: perfkit-report-${{ jobs.start.outputs.run-id }}
+
+permissions:
+  contents: read
+
+env:
+  PERFKIT: github:fonoster/perfkit#${{ inputs.perfkit-ref }}
+
+jobs:
+  start:
+    name: Create the droplets and start the agent
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run-id: ${{ steps.run.outputs.run-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # npm 10 can't install a git dependency that has a prepare script.
+      - run: npm install -g npm@11
+      - id: run
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+          CONFIG: ${{ inputs.config }}
+          TARGET_VERSION: ${{ inputs.target-version }}
+          COMMIT: ${{ inputs.commit }}
+          BENCHMARKS: ${{ inputs.benchmarks }}
+        run: |
+          args=(run --config "$CONFIG" --target-version "$TARGET_VERSION" --commit "$COMMIT" --detach)
+          if [ -n "$BENCHMARKS" ]; then args+=(--benchmarks "$BENCHMARKS"); fi
+          npx -y "$PERFKIT" "${args[@]}" | tee start.log
+          run_id=$(sed -n 's/^run \([0-9TZ-]*\) started;.*/\1/p' start.log)
+          test -n "$run_id"
+          echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+
+  wait-1:
+    name: Wait for the run (first 5 h 50 min)
+    needs: start
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    outputs:
+      done: ${{ steps.wait.outputs.done }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g npm@11
+      - id: wait
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          set +e
+          npx -y "$PERFKIT" collect "$RUN_ID" --wait --timeout 5h50m
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "done=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$code" -eq 4 ]; then echo "done=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perfkit-raw-${{ needs.start.outputs.run-id }}
+          path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
+          if-no-files-found: ignore
+          overwrite: true
+
+  wait-2:
+    name: Wait for the run (next 5 h 50 min)
+    needs: [start, wait-1]
+    if: needs.wait-1.outputs.done != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g npm@11
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: perfkit-raw-${{ needs.start.outputs.run-id }}
+          path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
+      - env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          set +e
+          npx -y "$PERFKIT" collect "$RUN_ID" --wait --timeout 5h50m
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ] || [ "$code" -eq 4 ]; then exit 0; fi
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perfkit-raw-${{ needs.start.outputs.run-id }}
+          path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
+          if-no-files-found: ignore
+          overwrite: true
+
+  finish:
+    name: Collect the results and delete the droplets
+    needs: [start, wait-1, wait-2]
+    if: >-
+      always() && needs.start.result == 'success' &&
+      needs.wait-1.result == 'success' &&
+      (needs.wait-2.result == 'success' || needs.wait-2.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.collect.outputs.verdict }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g npm@11
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: perfkit-raw-${{ needs.start.outputs.run-id }}
+          path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
+      - id: collect
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          set +e
+          npx -y "$PERFKIT" collect "$RUN_ID" | tee collect.log
+          code=${PIPESTATUS[0]}
+          set -e
+          verdict=$(sed -n 's/^report .*(\(.* benchmarks passed\))$/\1/p' collect.log)
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perfkit-report-${{ needs.start.outputs.run-id }}
+          path: .perfkit/${{ needs.start.outputs.run-id }}/
+          if-no-files-found: ignore
+
+  cleanup:
+    name: Delete anything the run left behind
+    needs: [start, finish]
+    if: always() && needs.start.outputs.run-id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g npm@11
+      - env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: npx -y "$PERFKIT" sweep --run "$RUN_ID"

@@ -1,0 +1,63 @@
+{
+  "name": "perfkit",
+  "version": "0.1.0",
+  "description": "Benchmark harness for Fonoster projects: DigitalOcean runs, one report.json schema, one branded report page",
+  "license": "MIT",
+  "author": "Pedro Sanders <psanders@fonoster.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fonoster/perfkit.git"
+  },
+  "type": "module",
+  "bin": {
+    "perfkit": "dist/cli.js"
+  },
+  "exports": {
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "default": "./dist/schemas/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write . && eslint . --fix",
+    "test": "mocha",
+    "schemas": "tsx scripts/writeSchemas.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.20.5",
+    "@types/sinon": "^22.0.2",
+    "@types/sinon-chai": "^4.0.1",
+    "chai": "^6.3.0",
+    "cheerio": "^1.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "mocha": "^11.8.0",
+    "nock": "^15.0.5",
+    "prettier": "^3.9.10",
+    "sinon": "^22.1.0",
+    "sinon-chai": "^4.0.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0",
+    "typescript-eslint": "^8.72.1"
+  }
+}

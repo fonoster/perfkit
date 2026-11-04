@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "perfkit/runs/v1"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^\\d{8}T\\d{6}Z-[0-9a-f]{7}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,40}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "verdict": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "passed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "inconclusive": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "aborted": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "notRun": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "total",
+              "passed",
+              "failed",
+              "inconclusive",
+              "aborted",
+              "notRun"
+            ],
+            "additionalProperties": false
+          },
+          "benchmarks": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9-]+$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "capacity"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "passed",
+                            "failed"
+                          ]
+                        },
+                        "headline": {
+                          "type": "object",
+                          "properties": {
+                            "limitCps": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "p99AtLimitMs": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "limitCps",
+                            "p99AtLimitMs"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "verdict",
+                        "headline"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9-]+$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "capacity"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "inconclusive",
+                            "aborted",
+                            "not-run"
+                          ]
+                        },
+                        "headline": {
+                          "type": "null"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "verdict",
+                        "headline"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9-]+$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "soak"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "passed",
+                            "failed"
+                          ]
+                        },
+                        "headline": {
+                          "type": "object",
+                          "properties": {
+                            "memoryGrowthMBPerHour": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "memoryGrowthMBPerHour"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "verdict",
+                        "headline"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9-]+$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "soak"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "inconclusive",
+                            "aborted",
+                            "not-run"
+                          ]
+                        },
+                        "headline": {
+                          "type": "null"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "verdict",
+                        "headline"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "version",
+          "commit",
+          "path",
+          "verdict",
+          "benchmarks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "project",
+    "runs"
+  ],
+  "additionalProperties": false,
+  "title": "runs.json v1",
+  "description": "The history index of a project's perfkit runs, newest first (schema: perfkit/runs/v1)."
+}

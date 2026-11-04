@@ -1,0 +1,19 @@
+# The server under test. perfkit runs it with `docker compose up -d` on the
+# UUT and passes the PERFKIT_* variables; every service uses host networking.
+services:
+  uas:
+    image: ${PERFKIT_IMAGE_UAS}
+    platform: linux/amd64        # the SIPp image is amd64 only
+    network_mode: host
+    volumes:
+      - ./:/scenarios:ro
+    command:
+      [
+        "/sipp/sipp",
+        "-sf", "/scenarios/uas_message.xml",
+        "-i", "${PERFKIT_UUT_IP}",
+        "-p", "5062",
+        "-t", "u1",
+        "-buff_size", "4194304",
+        "-nostdin"
+      ]

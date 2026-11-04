@@ -1,0 +1,9 @@
+dist/
+node_modules/
+package-lock.json
+# Written by `npm run schemas`; a test compares them byte for byte
+schemas/
+# Fixtures stay exactly as the issue and the docs quote them
+examples/
+designs/
+*.md
