@@ -62,9 +62,12 @@ jobs:
     outputs:
       run-id: ${{ steps.run.outputs.run-id }}
     steps:
+      # The caller's perf config comes from the commit that called this workflow, not from the
+      # commit under test: a release tag can predate the config. --commit still reports the
+      # commit under test.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.commit }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
