@@ -31,7 +31,7 @@ adds that machine's IP to the run's firewall before it logs in, with `PERFKIT_SS
 | `perfkit-ref` | required | The perfkit tag the workflow is called at, like `v0.1.0`; the jobs run that perfkit (`npx -y github:fonoster/perfkit#<perfkit-ref>`). A reusable workflow can't see its own ref, so pass the same tag as in `uses:`. |
 | `config` | `perf/perfkit.yaml` | The project's perfkit.yaml. |
 | `target-version` | required | The image tag under test, like `2.31.5`. |
-| `commit` | required | The commit under test; `start` checks it out. |
+| `commit` | required | The commit under test, written to report.json. The `perf/` config is read from the commit that called the workflow (`github.sha`), because a release tag under test can predate the config. |
 | `benchmarks` | empty | Comma-separated benchmark ids; empty runs them all. |
 
 | Secret | Meaning |
