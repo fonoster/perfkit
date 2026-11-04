@@ -57,7 +57,7 @@ describe("createPlanRun", () => {
         role: "uut",
         name: `perfkit-${RUN_ID}-uut`,
         size: "c-8",
-        image: "ubuntu-24-04-x64"
+        image: "ubuntu-22-04-x64"
       });
       expect(plan.loadgen.name).to.equal(`perfkit-${RUN_ID}-loadgen`);
       expect(plan.images.map(({ ref }) => ref)).to.deep.equal([

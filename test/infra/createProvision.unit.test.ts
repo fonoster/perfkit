@@ -70,7 +70,7 @@ describe("createProvision", () => {
       expect(uut).to.deep.include({
         vpc_uuid: client.vpcs[0]!.id,
         tags: ["perfkit", `perfkit-run-${RUN_ID}`],
-        image: "ubuntu-24-04-x64",
+        image: "ubuntu-22-04-x64",
         size: "c-8"
       });
       const [vpc] = client.callsTo("createVpc")[0] as [{ name: string }];

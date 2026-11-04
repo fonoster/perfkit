@@ -4,8 +4,12 @@
 export const DO_API_URL = "https://api.digitalocean.com/v2";
 export const PUBLIC_IP_URL = "https://api.ipify.org";
 
-/** The droplet OS image in v1. */
-export const DROPLET_IMAGE = "ubuntu-24-04-x64";
+/**
+ * The droplet OS image in v1. Not 24.04: on its kernel (6.8) SIPp 3.7.3 places
+ * ~5% fewer calls than its rate, then sends the ones it owes in a burst, which
+ * spoils capacity steps. On 22.04 (5.15) it holds the rate.
+ */
+export const DROPLET_IMAGE = "ubuntu-22-04-x64";
 
 /** Every perfkit droplet carries it; sweep looks only at droplets with it. */
 export const PERFKIT_TAG = "perfkit";

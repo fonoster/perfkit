@@ -27,8 +27,8 @@ const DELETED = "Everything this run created was deleted.";
 
 const PLAN = `plan for Routr 2.31.5 (dry run, nothing created)
   region     nyc3, new VPC (range assigned by DigitalOcean)
-  uut        c-8   ubuntu-24-04-x64
-  loadgen    c-16  ubuntu-24-04-x64
+  uut        c-8   ubuntu-22-04-x64
+  loadgen    c-16  ubuntu-22-04-x64
   firewall   from the VPC: all ports (tcp/udp) and icmp; SSH (22) from 203.0.113.7 and the VPC only
   tags       perfkit, perfkit-run-${RUN_ID}
   images     fonoster/routr-edgeport:2.31.5@sha256:4f1c…e2a0
