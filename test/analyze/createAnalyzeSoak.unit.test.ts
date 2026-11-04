@@ -311,6 +311,35 @@ describe("createAnalyzeSoak", () => {
         ]
       });
     });
+
+    it("should stream spans.jsonl through readLines when the deps have it", async () => {
+      // Arrange
+      const spans = readFileSync(
+        join(FIXTURES, "spans", "grpc-hops.jsonl"),
+        "utf8"
+      );
+      const files = {
+        ...soakRaw({ warmupS: 1800, afterS: 7200 }),
+        "spans.jsonl": spans
+      };
+      const deps = fakeDeps(files);
+      const readLines = sinon.stub().callsFake(async function* () {
+        yield* spans.split("\n");
+      });
+
+      // Act
+      const result = await createAnalyzeSoak({ ...deps, readLines })({
+        rawDir: RAW_DIR,
+        benchmark: soakConfig({ otlp: true })
+      });
+
+      // Assert
+      expect(readLines).to.have.been.calledOnceWith(`${RAW_DIR}/spans.jsonl`);
+      expect(deps.readFile).not.to.have.been.calledWith(
+        `${RAW_DIR}/spans.jsonl`
+      );
+      expect(measured(result).hops?.spans).to.equal(9);
+    });
   });
 
   describe("with invalid input", () => {

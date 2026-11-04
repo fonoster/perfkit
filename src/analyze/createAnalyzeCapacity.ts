@@ -18,7 +18,8 @@ import {
   measureCapacityStep
 } from "./measureCapacityStep.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
-import { parseOtlpSpans } from "./parseOtlpSpans.js";
+import { parseOtlpSpanLines } from "./parseOtlpSpans.js";
+import { readRawLines } from "./readRawLines.js";
 import { parseSamplerJsonl } from "./parseSamplerJsonl.js";
 import { parseUdpJsonl } from "./parseUdpJsonl.js";
 import { capacityMetaSchema } from "./rawResults.schema.js";
@@ -145,7 +146,10 @@ export function createAnalyzeCapacity(deps: AnalyzeDeps) {
         : null;
     const hops = benchmark.telemetry.otlp
       ? computeHops(
-          parseOtlpSpans(await read("spans.jsonl"), "spans.jsonl"),
+          await parseOtlpSpanLines(
+            await readRawLines(deps, rawDir, names, "spans.jsonl"),
+            "spans.jsonl"
+          ),
           benchmark.telemetry.sampleRatio,
           Date.parse(meta.startedAt)
         )

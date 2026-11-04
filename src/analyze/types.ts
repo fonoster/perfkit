@@ -5,6 +5,12 @@
 export interface AnalyzeDeps {
   /** Reads a UTF-8 file. Rejects when it does not exist. */
   readFile: (path: string) => Promise<string>;
+  /**
+   * Reads a UTF-8 file one line at a time, for files too large for one
+   * string (spans.jsonl passes 512 MB in an hour). Without it, analyzers
+   * fall back to `readFile`.
+   */
+  readLines?: (path: string) => AsyncIterable<string>;
   /** Lists the names in a directory. Rejects when it does not exist. */
   readdir: (path: string) => Promise<string[]>;
 }
