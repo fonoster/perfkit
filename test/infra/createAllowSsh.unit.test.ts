@@ -36,6 +36,7 @@ describe("createAllowSsh", () => {
         firewall.inbound_rules.find(({ ports }) => ports === "22")!;
       expect(ssh(after).sources.addresses).to.deep.equal([
         "203.0.113.7/32",
+        "10.116.0.0/20",
         "198.51.100.20/32"
       ]);
       const strip = (firewall: typeof after) => ({

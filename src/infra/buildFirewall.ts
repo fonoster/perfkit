@@ -8,8 +8,9 @@ const ANYWHERE = { addresses: ["0.0.0.0/0", "::/0"] };
 
 /**
  * A run's firewall: SIP (tcp and udp) and OTLP (tcp) from the VPC's range
- * only, SSH (22) from `sshSources` only, and every outbound connection. It
- * applies to the run's droplets.
+ * only, SSH (22) from `sshSources` and from the VPC (the agent on the load
+ * generator drives the UUT over SSH at its private IP), and every outbound
+ * connection. It applies to the run's droplets.
  */
 export function buildFirewall(input: {
   name: string;
@@ -24,7 +25,11 @@ export function buildFirewall(input: {
       { protocol: "udp", ports: SIP_PORTS, sources: vpc },
       { protocol: "tcp", ports: SIP_PORTS, sources: vpc },
       { protocol: "tcp", ports: OTLP_PORT, sources: vpc },
-      { protocol: "tcp", ports: "22", sources: { addresses: input.sshSources } }
+      {
+        protocol: "tcp",
+        ports: "22",
+        sources: { addresses: [...input.sshSources, input.vpcRange] }
+      }
     ],
     outbound_rules: [
       { protocol: "tcp", ports: "all", destinations: ANYWHERE },

@@ -60,7 +60,7 @@ export function formatPlan(
       `${plan.loadgen.size.padEnd(sizeWidth)}${plan.loadgen.image}`
     ]),
     ...field("firewall", [
-      `SIP (${SIP_PORTS} tcp/udp) and OTLP (${OTLP_PORT} tcp) from the VPC only; SSH (22) from ${plan.sshSource.replace(/\/32$/, "")} only`
+      `SIP (${SIP_PORTS} tcp/udp) and OTLP (${OTLP_PORT} tcp) from the VPC only; SSH (22) from ${plan.sshSource.replace(/\/32$/, "")} and the VPC only`
     ]),
     ...field("tags", [plan.tags.join(", ")]),
     ...field(

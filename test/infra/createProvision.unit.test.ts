@@ -55,7 +55,7 @@ describe("createProvision", () => {
       ]);
     });
 
-    it("should create the droplets in the VPC with the tags and a firewall open to SSH from this machine only", async () => {
+    it("should create the droplets in the VPC with the tags and a firewall open to SSH from this machine and the VPC only", async () => {
       // Arrange
       const { provision, client } = setup();
       const plan = await makePlan();
@@ -83,7 +83,7 @@ describe("createProvision", () => {
       expect(firewall.droplet_ids).to.have.length(2);
       expect(
         firewall.inbound_rules.find(({ ports }) => ports === "22")?.sources
-      ).to.deep.equal({ addresses: ["203.0.113.7/32"] });
+      ).to.deep.equal({ addresses: ["203.0.113.7/32", "10.116.0.0/20"] });
       expect(
         firewall.inbound_rules
           .filter(({ ports }) => ports !== "22")
