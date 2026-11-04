@@ -41,6 +41,17 @@ describe("perfkitConfigSchema", () => {
       expect(config.benchmarks[0]?.load.uac.users).to.equal(undefined);
     });
 
+    it("should default a capacity warm-up to 0s and accept one shorter than a step", () => {
+      const raw = loadConfig();
+      expect(perfkitConfigSchema.parse(raw).benchmarks[0]?.warmup).to.equal(
+        "0s"
+      );
+      raw.benchmarks[0].warmup = "20s";
+      expect(perfkitConfigSchema.parse(raw).benchmarks[0]?.warmup).to.equal(
+        "20s"
+      );
+    });
+
     it("should accept a project without a logo", () => {
       const raw = loadConfig();
       delete raw.project.logo;
@@ -62,6 +73,15 @@ describe("perfkitConfigSchema", () => {
       delete raw.benchmarks[0].load.rate.max;
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
         "benchmarks[0].load.rate.max: required"
+      ]);
+    });
+
+    it("should reject a capacity warm-up as long as a step", () => {
+      const raw = loadConfig();
+      raw.benchmarks[0].warmup = "1m";
+      raw.benchmarks[0].load.rate.every = "60s";
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "benchmarks[0].warmup: expected a warm-up shorter than load.rate.every (60s)"
       ]);
     });
 

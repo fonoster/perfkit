@@ -65,7 +65,7 @@ the other kind rejects them.
 | `narrative.why` | string | yes | | Why it matters. |
 | `narrative.how` | string | yes | | How the load is driven and what the verdict checks. |
 | `duration` | duration | *soak*: yes | | How long the load runs. |
-| `warmup` | duration | *soak*: yes | | Excluded from every verdict. |
+| `warmup` | duration | *soak*: yes; *capacity*: no (`0s`) | | *soak*: excluded from every verdict. *capacity*: the first step still runs its full `every`, but its measurement starts `warmup` after the step starts, so a cold server's first seconds don't count. Shorter than `load.rate.every`. |
 | `uut.compose` | path | yes | | The Compose file the unit under test runs. |
 | `uut.setup` | path | no | none | A script that runs once the unit under test is up, for example to seed data. |
 | `uut.processes` | list | yes | | At least one. Sampled every 10 s. |

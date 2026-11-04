@@ -9,6 +9,7 @@
  */
 import { z } from "zod/v4";
 import { checkUniqueIds } from "./checkUniqueIds.js";
+import { checkWarmupShorterThanStep } from "./checkWarmupShorterThanStep.js";
 import {
   benchmarkIdSchema,
   count,
@@ -175,16 +176,20 @@ const narrativeSchema = z.strictObject({
   how: nonEmptyString
 });
 
-export const capacityBenchmarkConfigSchema = z.strictObject({
-  id: benchmarkIdSchema,
-  kind: z.literal("capacity"),
-  title: nonEmptyString,
-  narrative: narrativeSchema,
-  uut: configUutSchema,
-  load: capacityLoadSchema,
-  telemetry: telemetrySchema,
-  thresholds: capacityThresholdsSchema
-});
+export const capacityBenchmarkConfigSchema = z
+  .strictObject({
+    id: benchmarkIdSchema,
+    kind: z.literal("capacity"),
+    title: nonEmptyString,
+    narrative: narrativeSchema,
+    // The first step's measurement starts this long after the step does.
+    warmup: durationSchema.default("0s"),
+    uut: configUutSchema,
+    load: capacityLoadSchema,
+    telemetry: telemetrySchema,
+    thresholds: capacityThresholdsSchema
+  })
+  .superRefine(checkWarmupShorterThanStep);
 
 export const soakBenchmarkConfigSchema = z.strictObject({
   id: benchmarkIdSchema,

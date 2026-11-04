@@ -2,8 +2,9 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { expect } from "chai";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { ValidationError } from "../../src/errors/index.js";
 import { createNodeAnalyzeDeps } from "../../src/analyze/index.js";
 import { analyzeBenchmark } from "../../src/orchestrate/analyzeBenchmark.js";
@@ -17,7 +18,13 @@ import {
 } from "../analyze/builders.js";
 import { ROUTR_CONFIG } from "../fixtures.js";
 import { fakeRegistry, perfkit } from "../infra/fakes.js";
-import { doSetup, MINIMAL, PASSING_STEPS, type RawFiles } from "./setup.js";
+import {
+  doSetup,
+  MINIMAL,
+  MINIMAL_CONFIG,
+  PASSING_STEPS,
+  type RawFiles
+} from "./setup.js";
 
 /** A detached run whose agent the test runs itself. */
 async function detached(args: string[], files: RawFiles, routr = false) {
@@ -85,6 +92,71 @@ describe("createAgent", () => {
     expect(setup.agent.clock.now - START_MS).to.be.lessThan(
       2 * 60 * 1000 + 12 * 1000
     );
+  });
+
+  it("should leave a capacity warm-up out of the first step, live and in the final verdict", async () => {
+    // Arrange: the first 30 of step 1's 100 messages (sent in its first 18 s)
+    // are slow, as with a cold JIT; a 20 s warm-up leaves them out.
+    const dir = await mkdtemp(join(tmpdir(), "perfkit-warmup-"));
+    await cp(dirname(MINIMAL_CONFIG), dir, { recursive: true });
+    const config = join(dir, "perfkit.yaml");
+    const yaml = await readFile(config, "utf8");
+    await writeFile(
+      config,
+      yaml.replace("kind: capacity\n", "kind: capacity\n    warmup: 20s\n")
+    );
+    const cold = [
+      ...Array.from({ length: 30 }, () => 200),
+      ...Array.from({ length: 70 }, () => 5)
+    ];
+    const steps = [
+      { offeredCps: 50, latencies: cold },
+      ...PASSING_STEPS.slice(1)
+    ];
+    const setup = await detached(
+      ["run", "--config", config, "--target-version", "3.7.3"],
+      capacityRaw(steps)
+    );
+
+    // Act
+    await setup.agent.run(setup.runId());
+
+    // Assert
+    const progress = join(setup.hosts.roots.loadgen, "progress.log");
+    expect((await readFile(progress, "utf8")).trim().split("\n")).to.deep.equal(
+      [
+        "[sipp-uas] step    50 messages/s  p99 5.0 ms  failed 0.00%  ok",
+        "[sipp-uas] step   100 messages/s  p99 5.0 ms  failed 0.00%  ok",
+        "[sipp-uas] step   150 messages/s  p99 5.0 ms  failed 0.00%  ok",
+        "[sipp-uas] step   200 messages/s  p99 5.0 ms  failed 0.00%  ok"
+      ]
+    );
+    const raw = join(setup.hosts.roots.loadgen, "raw", "sipp-uas");
+    const meta = JSON.parse(await readFile(join(raw, "meta.json"), "utf8"));
+    expect(meta.steps[0].from).to.equal(
+      new Date(START_MS + 20_000).toISOString()
+    );
+    expect(meta.steps[1].from).to.equal(
+      new Date(START_MS + 60_000).toISOString()
+    );
+    const state = runStateSchema.parse(
+      JSON.parse(
+        await readFile(join(setup.hosts.roots.loadgen, "run.json"), "utf8")
+      )
+    );
+    const result = await analyzeBenchmark(
+      createNodeAnalyzeDeps(),
+      state.plan.benchmarks[0]!,
+      raw,
+      null,
+      "SIPp 3.7.3, UDP"
+    );
+    expect(result).to.include({ verdict: "passed" });
+    expect("series" in result && result.series?.steps[0]).to.include({
+      p99Ms: 5,
+      achievedCps: 50,
+      valid: true
+    });
   });
 
   it("should run compose down for the first benchmark before compose up for the second, and the second's setup once", async () => {

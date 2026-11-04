@@ -2,6 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { basename } from "node:path";
+import { capacityStepWindow } from "../analyze/capacityStepWindow.js";
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import type { Now, Sleep } from "../infra/index.js";
 import type { BenchmarkConfig } from "../schemas/index.js";
@@ -543,18 +544,18 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
             ...base,
             kind: "capacity",
             steps: Array.from({ length: Math.max(steps, 1) }, (_, index) => {
-              const everyMs =
-                durationToSeconds(benchmark.load.rate.every) * 1000;
+              const window = capacityStepWindow({
+                startedMs,
+                index,
+                everyMs: durationToSeconds(benchmark.load.rate.every) * 1000,
+                warmupMs: durationToSeconds(benchmark.warmup) * 1000,
+                endedMs: Math.max(endedMs, startedMs + 1)
+              });
               return {
                 offeredCps:
                   benchmark.load.rate.start + index * benchmark.load.rate.step,
-                from: iso(startedMs + index * everyMs),
-                to: iso(
-                  Math.min(
-                    startedMs + (index + 1) * everyMs,
-                    Math.max(endedMs, startedMs + 1)
-                  )
-                )
+                from: iso(window.fromMs),
+                to: iso(window.toMs)
               };
             })
           }

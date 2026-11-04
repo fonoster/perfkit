@@ -1,7 +1,6 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { OTLP_PORT, SIP_PORTS } from "../infra/constants.js";
 import type { Plan } from "../infra/index.js";
 import { parseDuration } from "../infra/parseDuration.js";
 import type { BenchmarkConfig } from "../schemas/index.js";
@@ -60,7 +59,7 @@ export function formatPlan(
       `${plan.loadgen.size.padEnd(sizeWidth)}${plan.loadgen.image}`
     ]),
     ...field("firewall", [
-      `SIP (${SIP_PORTS} tcp/udp) and OTLP (${OTLP_PORT} tcp) from the VPC only; SSH (22) from ${plan.sshSource.replace(/\/32$/, "")} and the VPC only`
+      `from the VPC: all ports (tcp/udp) and icmp; SSH (22) from ${plan.sshSource.replace(/\/32$/, "")} and the VPC only`
     ]),
     ...field("tags", [plan.tags.join(", ")]),
     ...field(

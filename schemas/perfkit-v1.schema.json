@@ -152,6 +152,11 @@
                 ],
                 "additionalProperties": false
               },
+              "warmup": {
+                "default": "0s",
+                "type": "string",
+                "pattern": "^\\d+[smh]$"
+              },
               "uut": {
                 "type": "object",
                 "properties": {
