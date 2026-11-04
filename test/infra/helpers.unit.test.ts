@@ -92,7 +92,7 @@ describe("buildFirewall", () => {
       "udp 5060-5063 10.1.0.0/20",
       "tcp 5060-5063 10.1.0.0/20",
       "tcp 4318 10.1.0.0/20",
-      "tcp 22 203.0.113.7/32"
+      "tcp 22 203.0.113.7/32,10.1.0.0/20"
     ]);
     expect(
       firewall.outbound_rules.map(({ protocol }) => protocol)
