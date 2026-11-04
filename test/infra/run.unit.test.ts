@@ -2,10 +2,15 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { expect } from "chai";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import sinon from "sinon";
+import { parse, stringify } from "yaml";
 import { fingerprintOf } from "../../src/infra/index.js";
 import { ROUTR_CONFIG } from "../fixtures.js";
 import {
+  DIGEST,
   fakeRegistry,
   infraDeps,
   perfkit,
@@ -51,6 +56,41 @@ describe("perfkit run", () => {
       expect(result).to.deep.equal({ code: 0, out: PLAN, err: "" });
       expect(infra.clients).to.deep.equal([]);
       expect(infra.account.calls).to.deep.equal([]);
+    });
+
+    it("should pin an image with a tagSuffix at the target version followed by the suffix", async () => {
+      // Arrange
+      const dir = await mkdtemp(join(tmpdir(), "perfkit-suffix-"));
+      await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
+      const config = join(dir, "perfkit.yaml");
+      const raw = parse(await readFile(config, "utf8"));
+      raw.images.edgeportGo = {
+        name: "fonoster/routr-edgeport",
+        tagSuffix: "-go-experimental"
+      };
+      await writeFile(config, stringify(raw));
+      const infra = infraDeps({
+        registry: fakeRegistry({
+          "fonoster/routr-edgeport:2.31.5": DIGEST.edgeport,
+          "fonoster/routr-echo:2.31.5": DIGEST.echo,
+          "fonoster/routr-one:2.31.5": DIGEST.one,
+          "fonoster/routr-edgeport:2.31.5-go-experimental": DIGEST.one
+        })
+      });
+
+      // Act
+      const result = await perfkit(
+        ["run", "--config", config, "--target-version", "2.31.5", "--dry-run"],
+        infra
+      );
+
+      // Assert
+      expect(result.err).to.equal("");
+      expect(result.code).to.equal(0);
+      expect(result.out).to.include(
+        "             fonoster/routr-one:2.31.5@sha256:9b07…1d3c\n" +
+          "             fonoster/routr-edgeport:2.31.5-go-experimental@sha256:9b07…1d3c\n"
+      );
     });
 
     it("should list only the benchmarks given with --benchmarks", async () => {

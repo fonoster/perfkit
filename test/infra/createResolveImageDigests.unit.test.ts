@@ -42,6 +42,43 @@ describe("createResolveImageDigests", () => {
       ]);
     });
 
+    it("should pin an entry with a tagSuffix at the tag followed by the suffix", async () => {
+      // Arrange
+      const registry = fakeRegistry({
+        "fonoster/routr-edgeport:2.32.0": DIGEST.edgeport,
+        "fonoster/routr-edgeport:2.32.0-go-experimental": DIGEST.one
+      });
+      const resolve = createResolveImageDigests({ registry });
+
+      // Act
+      const images = await resolve({
+        images: {
+          edgeport: "fonoster/routr-edgeport",
+          edgeportGo: {
+            name: "fonoster/routr-edgeport",
+            tagSuffix: "-go-experimental"
+          }
+        },
+        tag: "2.32.0"
+      });
+
+      // Assert
+      expect(images[1]).to.deep.equal({
+        key: "edgeportGo",
+        name: "fonoster/routr-edgeport",
+        tag: "2.32.0-go-experimental",
+        digest: DIGEST.one,
+        ref: `fonoster/routr-edgeport:2.32.0-go-experimental@${DIGEST.one}`
+      });
+      expect(images[0]?.ref).to.equal(
+        `fonoster/routr-edgeport:2.32.0@${DIGEST.edgeport}`
+      );
+      expect(registry.asked).to.deep.equal([
+        "fonoster/routr-edgeport:2.32.0",
+        "fonoster/routr-edgeport:2.32.0-go-experimental"
+      ]);
+    });
+
     it("should name the missing image", async () => {
       // Arrange
       const resolve = createResolveImageDigests({
@@ -73,6 +110,22 @@ describe("createResolveImageDigests", () => {
       const err = await resolve({ images: {}, tag: "" }).catch(
         (e: unknown) => e
       );
+
+      // Assert
+      expect(err).to.be.instanceOf(ValidationError);
+      expect(registry.asked).to.deep.equal([]);
+    });
+
+    it("should reject a tagSuffix with characters a tag can't hold", async () => {
+      // Arrange
+      const registry = fakeRegistry();
+      const resolve = createResolveImageDigests({ registry });
+
+      // Act
+      const err = await resolve({
+        images: { go: { name: "fonoster/routr-edgeport", tagSuffix: "/go" } },
+        tag: "2.32.0"
+      }).catch((e: unknown) => e);
 
       // Assert
       expect(err).to.be.instanceOf(ValidationError);

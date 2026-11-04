@@ -200,6 +200,12 @@ describe("reportSchema", () => {
       ]);
     });
 
+    it("should accept an image whose tag carries a suffix", () => {
+      const report = loadReport("passed");
+      report.run.images.edgeportGo = `fonoster/routr-edgeport:2.32.0-go-experimental@sha256:${"a".repeat(64)}`;
+      expect(errorsOf(reportSchema, report)).to.deep.equal([]);
+    });
+
     it("should reject unknown keys", () => {
       const report = loadReport("passed");
       report.run.infra.uut.disk = 100;

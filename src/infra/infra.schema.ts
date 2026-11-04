@@ -9,6 +9,7 @@ import { z } from "zod/v4";
 import {
   benchmarkConfigSchema,
   durationSchema,
+  imageEntrySchema,
   perfkitConfigSchema
 } from "../schemas/index.js";
 import {
@@ -48,7 +49,7 @@ const ipv4Cidr32Schema = z
 
 export const resolveImageDigestsInputSchema = z.strictObject({
   images: z
-    .record(z.string(), nonEmptyString)
+    .record(z.string(), imageEntrySchema)
     .refine((images) => Object.keys(images).length > 0, {
       error: "expected at least one image"
     }),

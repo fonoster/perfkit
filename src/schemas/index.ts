@@ -9,11 +9,13 @@ export { formatRunId } from "./formatRunId.js";
 export {
   benchmarkConfigSchema,
   capacityBenchmarkConfigSchema,
+  imageEntrySchema,
   perfkitConfigSchema,
   relativePathSchema,
   soakBenchmarkConfigSchema,
   type BenchmarkConfig,
   type CapacityBenchmarkConfig,
+  type ImageEntry,
   type PerfkitConfig,
   type PerfkitConfigInput,
   type SoakBenchmarkConfig

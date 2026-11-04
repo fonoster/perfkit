@@ -3,7 +3,7 @@
  */
 import type { z } from "zod/v4";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
-import { formatRunId } from "../schemas/index.js";
+import { formatRunId, type PerfkitConfig } from "../schemas/index.js";
 import {
   DROPLET_IMAGE,
   PERFKIT_TAG,
@@ -23,7 +23,7 @@ import type { Plan, ResolvedImage } from "./types.js";
  */
 export function createPlanRun(deps: {
   resolveImageDigests: (input: {
-    images: Record<string, string>;
+    images: PerfkitConfig["images"];
     tag: string;
   }) => Promise<ResolvedImage[]>;
   getPublicIp: () => Promise<string>;

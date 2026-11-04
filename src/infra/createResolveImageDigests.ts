@@ -11,7 +11,8 @@ import type { RegistryClient, ResolvedImage } from "./types.js";
 
 /**
  * Creates the function that pins every image of perfkit.yaml at one tag to
- * its digest, so a run uses exactly the images `--dry-run` showed.
+ * its digest, so a run uses exactly the images `--dry-run` showed. An entry
+ * with a `tagSuffix` is pinned at the tag followed by its suffix.
  *
  * @param deps - The registry client (injected)
  * @returns A validated function; it throws ImageNotFoundError for a missing
@@ -22,11 +23,15 @@ export function createResolveImageDigests(deps: { registry: RegistryClient }) {
     images,
     tag
   }: ResolveImageDigestsInput): Promise<ResolvedImage[]> => {
-    const entries = Object.entries(images);
-    const digests = await Promise.all(
-      entries.map(([, name]) => deps.registry.getDigest(name, tag))
+    const entries = Object.entries(images).map(([key, entry]) =>
+      typeof entry === "string"
+        ? { key, name: entry, tag }
+        : { key, name: entry.name, tag: `${tag}${entry.tagSuffix}` }
     );
-    return entries.map(([key, name], index) => {
+    const digests = await Promise.all(
+      entries.map(({ name, tag }) => deps.registry.getDigest(name, tag))
+    );
+    return entries.map(({ key, name, tag }, index) => {
       const digest = digests[index];
       if (!digest) throw new ImageNotFoundError(`${name}:${tag}`);
       return { key, name, tag, digest, ref: `${name}:${tag}@${digest}` };
