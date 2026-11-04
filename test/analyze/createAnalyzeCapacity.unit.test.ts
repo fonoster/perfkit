@@ -241,6 +241,23 @@ describe("createAnalyzeCapacity", () => {
       expect(result).not.to.have.property("rules");
     });
 
+    it("should be inconclusive when SIPp placed 110% of the offered rate", async () => {
+      // SIPp that falls behind its schedule later sends the calls it owes in a
+      // burst; that step measures the burst, not the server under test
+      // Act
+      const result = await analyze([
+        { offeredCps: 50 },
+        { offeredCps: 100, attempted: 6600 }
+      ]);
+
+      // Assert
+      expect(result).to.include({
+        verdict: "inconclusive",
+        reason:
+          "load generator sent a burst at 100 messages/s (placed 110 messages/s, 110% of offered)"
+      });
+    });
+
     it("should be inconclusive when SIPp placed 90% of the offered rate", async () => {
       // Act
       const result = await analyze([
