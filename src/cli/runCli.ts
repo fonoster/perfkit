@@ -93,10 +93,15 @@ Exit codes:
   130  cancelled; with --wait nothing deleted, otherwise everything`;
 const RENDER_HELP = `
 Writes to --out:
-  index.html             the latest run (only when this run is the newest)
-  runs/<id>/index.html   this run's page; older run pages are never rewritten
-  runs/<id>/report.json  this run's report
-  runs.json              the history, newest first, with this run in it
+  index.html                  the shell of the latest run
+  runs/<id>/index.html        a shell per run in the history
+  runs/<id>/report.json       this run's report, for the page's link
+  data/runs.json              the history, newest first, with this run in it
+  data/runs/<id>/report.json  this run's report, which the app draws
+  app/<version>/app.js        this perfkit's app, which draws every page
+
+The pages are drawn in the browser from data/, so older reports are never
+read or rewritten, and publishing with a newer perfkit redraws every run.
 
 Exit codes:
   0  the site was written
@@ -270,12 +275,12 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   program
     .command("render")
     .description(
-      "Render a report.json into the benchmarks site: the run's page, the latest page and runs.json."
+      "Add a report.json to the benchmarks site: its data, the page shells and the app that draws them."
     )
     .requiredOption("--report <file>", "the run's report.json")
     .option(
       "--history <file|url>",
-      "the published runs.json, as a file or an https URL; without it, this is the first run"
+      "the published data/runs.json (or a runs.json of the old layout), as a file or an https URL; without it, this is the first run"
     )
     .requiredOption("--out <dir>", "the directory to write the site into")
     .addHelpText("after", RENDER_HELP)

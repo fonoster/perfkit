@@ -12,8 +12,11 @@ the history shows the runs before it.
 - `/benchmarks/` is the latest run, the one with the newest `startedAt`. Its run picker marks it
   `latest`, and "Link to this run" points to its own page.
 - `/benchmarks/runs/<id>/` is one run's page. It starts with "You're viewing the run of …" and a
-  link to the latest run. It is written once and never rewritten, so it shows the run, and the
-  history, as they were when it was published.
+  link to the latest run.
+
+Both are drawn in the browser by the perfkit app the site was last published with, from
+`data/runs.json` and the run's `data/runs/<id>/report.json`. A run's numbers never change, but its
+history and picker list every run published since, and a newer perfkit redraws it.
 
 ## Nav and header
 
