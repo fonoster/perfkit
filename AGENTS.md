@@ -7,8 +7,8 @@ publishes one report format for all of them. It creates two DigitalOcean droplet
 unit under test and a load generator), drives the load, collects the results into a
 `report.json` (schema `perfkit/report/v1`), deletes the droplets, and renders a branded static
 HTML report page. Each project keeps only its benchmark definitions in a `perf/` folder
-(`perf/perfkit.yaml`) and pins a perfkit release. The design of the report page is
-`designs/report.pen` (open it with Pencil or Nib, never as text).
+(`perf/perfkit.yaml`) and pins a perfkit release. The design of the report page lives in Routr:
+`designs/benchmarks.pen` in fonoster/routr (open it with Pencil or Nib, never as text).
 
 ## Commands
 
