@@ -99,6 +99,24 @@ describe("orchestration helpers", () => {
     ).to.deep.equal({ stdout: "out put", stderr: "err" });
   });
 
+  it("should demux a long log of small frames without overflowing the stack", () => {
+    // A 6-hour sampler file read over SSH arrives as tens of thousands of
+    // small frames; a recursive reader overflowed the stack on it.
+    const frame = (stream: number, text: string) => {
+      const body = Buffer.from(text);
+      const header = Buffer.alloc(8);
+      header[0] = stream;
+      header.writeUInt32BE(body.length, 4);
+      return Buffer.concat([header, body]);
+    };
+    const lines = Array.from({ length: 200_000 }, (_, i) => `${i}\n`);
+    const { stdout, stderr } = demuxLogs(
+      Buffer.concat(lines.map((line) => frame(1, line)))
+    );
+    expect(stdout).to.equal(lines.join(""));
+    expect(stderr).to.equal("");
+  });
+
   it("should read docker info and refuse what it can't read", () => {
     expect(
       parseDockerInfo("8;17179869184;Ubuntu 24.04.1 LTS;27.3.1\n")
