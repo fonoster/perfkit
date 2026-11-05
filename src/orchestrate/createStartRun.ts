@@ -146,6 +146,7 @@ export function createStartRun(deps: StartRunDeps) {
         plan: input.plan,
         config: input.config,
         ...(input.logoSvg ? { logoSvg: input.logoSvg } : {}),
+        ...(input.faviconSvg ? { faviconSvg: input.faviconSvg } : {}),
         hosts: input.hosts,
         ...(input.live ? { live: input.live } : {}),
         machines: { uut, loadgen },

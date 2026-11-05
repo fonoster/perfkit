@@ -567,6 +567,22 @@ describe("the report page", () => {
     expect($(".nav svg circle[fill]")).to.have.length(0);
   });
 
+  it("should link the favicon in the head, and none without one", async () => {
+    // Arrange
+    const report = loadReport("passed");
+    report.project.faviconSvg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+
+    // Act
+    const site = await renderSite(report);
+    const plain = (await renderSite(loadReport("passed"))).latest();
+
+    // Assert
+    const href = `data:image/svg+xml,${encodeURIComponent(report.project.faviconSvg)}`;
+    expect(site.latest()('head link[rel="icon"]').attr("href")).to.equal(href);
+    expect(site.runPage()('head link[rel="icon"]').attr("href")).to.equal(href);
+    expect(plain('link[rel="icon"]')).to.have.length(0);
+  });
+
   it("should fall back to the project name without a logo", async () => {
     // Arrange
     const report = loadReport("passed");

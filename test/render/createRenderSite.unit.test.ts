@@ -86,6 +86,26 @@ describe("perfkit render", () => {
     expect(shells).to.have.length(1 + site.runs().runs.length);
   });
 
+  it("should put the report's favicon in every shell", async () => {
+    // Arrange
+    const report = loadReport("failed");
+    report.project.faviconSvg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+
+    // Act
+    const site = await renderSite(report, loadHistory(RUNS_4));
+
+    // Assert
+    const shells = [...site.written.entries()].filter(([path]) =>
+      path.endsWith("index.html")
+    );
+    expect(shells).to.have.length(1 + site.runs().runs.length);
+    shells.forEach(([, html]) =>
+      expect(html).to.contain(
+        `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(report.project.faviconSvg)}">`
+      )
+    );
+  });
+
   it("should print the warning and render without deltas when there is no history", async () => {
     // Act
     const result = await runRender(

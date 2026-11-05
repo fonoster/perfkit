@@ -41,6 +41,7 @@ Rules for both files:
 | :--- | :--- | :--- |
 | `project.name`, `repo`, `siteUrl`, `accent`, `title`, `lead` | string | Copied from perfkit.yaml. |
 | `project.logoSvg` | string | The SVG markup of `project.logo`, inlined. Present only when perfkit.yaml has `logo`. |
+| `project.faviconSvg` | string | The SVG markup of `project.favicon`, inlined. Every page links it as its icon (a URL-encoded `data:image/svg+xml` URI). Present only when perfkit.yaml has `favicon`. |
 | `project.live.url` | URL | Where the latest page polls live.json: `project.live.url`, else `live.url`, else `https://<live.domain>/live.json` of perfkit.yaml. Absent without them. |
 
 ### run

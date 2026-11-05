@@ -88,6 +88,14 @@ describe("perfkitConfigSchema", () => {
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([]);
     });
 
+    it("should accept an .svg favicon", () => {
+      const raw = loadConfig();
+      raw.project.favicon = "favicon.svg";
+      expect(perfkitConfigSchema.parse(raw).project.favicon).to.equal(
+        "favicon.svg"
+      );
+    });
+
     it("should accept a capacity step that is a multiple of 10 s", () => {
       const raw = loadConfig();
       raw.benchmarks[0].load.rate.every = "30s";
@@ -111,6 +119,14 @@ describe("perfkitConfigSchema", () => {
       delete raw.benchmarks[0].load.rate.max;
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
         "benchmarks[0].load.rate.max: required"
+      ]);
+    });
+
+    it("should reject a favicon that is not an .svg file", () => {
+      const raw = loadConfig();
+      raw.project.favicon = "favicon.png";
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "project.favicon: expected an .svg file"
       ]);
     });
 

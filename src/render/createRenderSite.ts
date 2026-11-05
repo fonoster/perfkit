@@ -41,7 +41,8 @@ type History =
  * (`app/<version>/app.js`), this run's report (`data/runs/<id>/report.json`,
  * and a copy in `runs/<id>/` for the page's report.json link), the history
  * (`data/runs.json`), and the shells (`index.html` and one
- * `runs/<id>/index.html` per run in the history), which load the app. The
+ * `runs/<id>/index.html` per run in the history), which load the app and
+ * carry this report's favicon, so the tab has its icon before the app draws. The
  * app draws each page from the data when it is viewed, so older reports are
  * never read or rewritten, and a new perfkit redraws every run.
  *
@@ -89,7 +90,10 @@ export function createRenderSite(deps: RenderSiteDeps) {
         project: merged.project,
         run,
         page,
-        perfkitVersion: deps.version
+        perfkitVersion: deps.version,
+        ...(report.project.faviconSvg
+          ? { faviconSvg: report.project.faviconSvg }
+          : {})
       });
     const at = (path: string) => join(out, ...path.split("/"));
 

@@ -32,6 +32,12 @@ describe("reportSchema", () => {
       expect(errorsOf(reportSchema, report)).to.deep.equal([]);
     });
 
+    it("should accept a report with a faviconSvg", () => {
+      const report = loadReport("passed");
+      report.project.faviconSvg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+      expect(errorsOf(reportSchema, report)).to.deep.equal([]);
+    });
+
     it("should accept a report without logoSvg, hops or otelcol", () => {
       const report = loadReport("passed");
       delete report.project.logoSvg;
@@ -42,6 +48,14 @@ describe("reportSchema", () => {
   });
 
   describe("with an invalid report", () => {
+    it("should reject a faviconSvg that is not SVG markup", () => {
+      const report = loadReport("passed");
+      report.project.faviconSvg = "favicon.svg";
+      expect(errorsOf(reportSchema, report)).to.deep.equal([
+        'project.faviconSvg: expected inline SVG markup; got "favicon.svg"'
+      ]);
+    });
+
     it('should reject verdict "ok" with the Contract\'s message', () => {
       const report = loadReport("passed");
       report.benchmarks[1].verdict = "ok";

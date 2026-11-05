@@ -32,6 +32,7 @@ Rules for the whole file:
 | `project.siteUrl` | URL | yes | | Where the report pages are published, like `https://routr.io/benchmarks`. |
 | `project.accent` | string | yes | | 6-digit hex color, like `#5FCFCE`: the page's accent color. |
 | `project.logo` | path | no | none | An `.svg` file. Without it, the nav shows `project.name`. |
+| `project.favicon` | path | no | none | An `.svg` file: the browser tab's icon on every page. Read when the run starts and inlined into report.json and live.json. Without it, the pages have no icon. |
 | `project.title` | string | yes | | The page's headline. |
 | `project.lead` | string | yes | | The paragraph under the headline. |
 | `project.live.url` | URL | no | `live.url`, else `https://<live.domain>/live.json` | Where the benchmarks page polls a run in progress. Goes into report.json, so the published page knows it. |
@@ -156,6 +157,7 @@ project:
   siteUrl: https://routr.io/benchmarks
   accent: "#5FCFCE"               # 6-digit hex; the page's accent color
   logo: logo.svg                  # optional SVG; without it the nav shows project.name
+  favicon: favicon.svg            # optional SVG; the browser tab's icon
   title: How much SIP traffic Routr handles.
   lead: We run these tests after significant changes to the code, on dedicated DigitalOcean servers, one for Routr and one for the load generator. The EdgePort runs alone to find its limit; the whole stack runs for hours to catch leaks.
 infra:

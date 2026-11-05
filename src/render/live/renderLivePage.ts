@@ -4,6 +4,7 @@
 import { esc } from "../html.js";
 import { pageStyles } from "../pageStyles.js";
 import { PICKER_SCRIPT } from "../pickerScript.js";
+import { renderFaviconLink } from "../renderFaviconLink.js";
 import { liveStyles } from "./liveStyles.js";
 import { renderLiveView } from "./renderLiveView.js";
 import type { LiveViewContext } from "./types.js";
@@ -25,7 +26,7 @@ export function renderLivePage(ctx: LiveViewContext): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(`${live.project.name} benchmarks · running now · v${live.version}`)}</title>
-<meta name="description" content="${esc(live.project.title)}">
+${renderFaviconLink(live.project.faviconSvg)}<meta name="description" content="${esc(live.project.title)}">
 <meta name="generator" content="perfkit ${esc(ctx.perfkitVersion)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

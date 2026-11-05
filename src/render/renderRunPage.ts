@@ -3,6 +3,7 @@
  */
 import { esc } from "./html.js";
 import { pageStyles } from "./pageStyles.js";
+import { renderFaviconLink } from "./renderFaviconLink.js";
 import { PICKER_SCRIPT } from "./pickerScript.js";
 import { renderCapacitySection } from "./sections/renderCapacitySection.js";
 import { renderFooter } from "./sections/renderFooter.js";
@@ -38,7 +39,7 @@ export function renderRunPage(ctx: PageContext): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="${esc(report.project.title)}">
+${renderFaviconLink(report.project.faviconSvg)}<meta name="description" content="${esc(report.project.title)}">
 <meta name="generator" content="perfkit ${esc(ctx.perfkitVersion)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

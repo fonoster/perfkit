@@ -17,6 +17,7 @@ export async function checkConfigPaths(
 ): Promise<DocumentError[]> {
   const named: Array<[string, string | undefined]> = [
     ["project.logo", config.project.logo],
+    ["project.favicon", config.project.favicon],
     ...config.benchmarks.flatMap(
       (benchmark, i): Array<[string, string | undefined]> => {
         const at = `benchmarks[${i}]`;

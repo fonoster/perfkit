@@ -270,6 +270,13 @@ async function runLocal(
         await deps.readFile(join(dirname(options.config), config.project.logo))
       ).trim()
     : undefined;
+  const favicon = config.project.favicon
+    ? (
+        await deps.readFile(
+          join(dirname(options.config), config.project.favicon)
+        )
+      ).trim()
+    : undefined;
   try {
     await createStartRun({
       remote: createLocalRemote({ run: infra.runProgram }),
@@ -284,6 +291,7 @@ async function runLocal(
       plan,
       config,
       ...(logo ? { logoSvg: logo } : {}),
+      ...(favicon ? { faviconSvg: favicon } : {}),
       hosts: {
         uutIp: "127.0.0.1",
         loadgenIp: "127.0.0.1",

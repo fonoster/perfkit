@@ -40,6 +40,27 @@ describe("checkConfigPaths", () => {
     );
   });
 
+  it("should check project.favicon when it is set", async () => {
+    // Arrange
+    const withFavicon = perfkitConfigSchema.parse({
+      ...loadConfig(),
+      project: { ...loadConfig().project, favicon: "favicon.svg" }
+    });
+    const isFile = sinon
+      .stub()
+      .callsFake(
+        async (path: string) => path !== resolve("/perf", "favicon.svg")
+      );
+
+    // Act
+    const errors = await checkConfigPaths(withFavicon, "/perf", isFile);
+
+    // Assert
+    expect(errors).to.deep.equal([
+      { path: "project.favicon", message: "file not found: favicon.svg" }
+    ]);
+  });
+
   it("should name the field of each missing file", async () => {
     // Arrange
     const missing = [

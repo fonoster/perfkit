@@ -29,6 +29,10 @@
           "type": "string",
           "pattern": "<svg[\\s>]"
         },
+        "faviconSvg": {
+          "type": "string",
+          "pattern": "<svg[\\s>]"
+        },
         "title": {
           "type": "string",
           "minLength": 1

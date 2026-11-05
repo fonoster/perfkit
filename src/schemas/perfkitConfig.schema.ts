@@ -41,6 +41,11 @@ const configProjectSchema = z.strictObject({
       error: "expected an .svg file"
     })
     .optional(),
+  favicon: relativePathSchema
+    .refine((value) => value.toLowerCase().endsWith(".svg"), {
+      error: "expected an .svg file"
+    })
+    .optional(),
   title: nonEmptyString,
   lead: nonEmptyString,
   live: projectLiveSchema.optional()
