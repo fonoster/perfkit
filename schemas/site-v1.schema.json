@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "perfkit/site/v1"
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+        },
+        "siteUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "accent": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "logoSvg": {
+          "type": "string",
+          "pattern": "<svg[\\s>]"
+        },
+        "faviconSvg": {
+          "type": "string",
+          "pattern": "<svg[\\s>]"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lead": {
+          "type": "string",
+          "minLength": 1
+        },
+        "live": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "repo",
+        "siteUrl",
+        "accent",
+        "title",
+        "lead"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "project"
+  ],
+  "additionalProperties": false,
+  "title": "site.json v1",
+  "description": "The project of a perfkit benchmarks site: its name, branding and live.json URL (schema: perfkit/site/v1)."
+}

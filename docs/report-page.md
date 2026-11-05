@@ -9,6 +9,9 @@ the history shows the runs before it.
 
 ## Pages
 
+- A site with no published runs yet (`perfkit render --config`) has only `/benchmarks/`: the
+  project's title and lead and "No published runs yet. When a run is in progress it appears
+  here live.", drawn from `data/site.json`. It goes live like the latest page.
 - `/benchmarks/` is the latest run, the one with the newest `startedAt`. Its run picker marks it
   `latest`, and "Link to this run" points to its own page.
 - `/benchmarks/runs/<id>/` is one run's page. It starts with "You're viewing the run of …" and a

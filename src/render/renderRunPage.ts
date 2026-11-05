@@ -15,7 +15,7 @@ import { renderSetup } from "./sections/renderSetup.js";
 import { renderSoakSection } from "./sections/renderSoakSection.js";
 import type { PageContext } from "./types.js";
 
-const FONTS =
+export const FONTS =
   "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap";
 
 /**

@@ -4,15 +4,16 @@
 /**
  * The live.json URL the latest page polls: `?live=<url>` on the page (for
  * a local run, like `?live=http://localhost:8787/live.json`), else the
- * project's `live.url` from the latest report, else none. Only http and
+ * first of `sources` that is set, in order: the project's `live.url` from
+ * `data/site.json`, then from the latest report; else none. Only http and
  * https URLs count.
  */
 export function resolveLiveUrl(
   pageUrl: string,
-  fromReport: string | null
+  ...sources: Array<string | null | undefined>
 ): string | null {
   const override = new URL(pageUrl).searchParams.get("live");
-  const candidate = override ?? fromReport;
+  const candidate = override ?? sources.find((source) => !!source) ?? null;
   if (!candidate) return null;
   try {
     const url = new URL(candidate, pageUrl);

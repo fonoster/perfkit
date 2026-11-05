@@ -7,6 +7,8 @@
  */
 export const SITE_PATHS = {
   runs: "data/runs.json",
+  /** The project: name, branding and live.json URL. */
+  site: "data/site.json",
   report: (id: string) => `data/runs/${id}/report.json`,
   /** The run's page; also holds a copy of its report.json, for the page's link. */
   runDir: (id: string) => `runs/${id}/`,
