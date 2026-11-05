@@ -3,7 +3,7 @@
  */
 /**
  * The page's CSS. The tokens are the dark-mode variables of
- * `designs/report.pen`; the accent comes from report.json
+ * `designs/benchmarks.pen` in fonoster/routr; the accent comes from report.json
  * (`project.accent`, a validated `#RRGGBB`).
  */
 export function pageStyles(accent: string): string {
