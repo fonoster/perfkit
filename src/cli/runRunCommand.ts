@@ -1,6 +1,8 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
+import { LIVE_DEFAULT_PORT } from "../live/constants.js";
+import type { LiveSettings } from "../orchestrate/runState.schema.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { ValidationError } from "../errors/index.js";
@@ -46,6 +48,8 @@ export interface RunCommandOptions {
   detach: boolean;
   dryRun: boolean;
   local?: boolean;
+  /** --live-port; default live.port of perfkit.yaml, else 8787. */
+  livePort?: string;
 }
 
 const FLAG_OF: Record<string, string> = {
@@ -96,6 +100,18 @@ export async function runRunCommand(
     return EXIT_BAD_INPUT;
   }
   const local = options.local === true;
+  const livePort =
+    options.livePort === undefined ? null : Number(options.livePort);
+  if (
+    livePort !== null &&
+    !(Number.isInteger(livePort) && livePort >= 1 && livePort <= 65535)
+  ) {
+    return fail(EXIT_BAD_INPUT, "--live-port: expected a port from 1 to 65535");
+  }
+  const live = {
+    port: livePort ?? loaded.config.live?.port ?? LIVE_DEFAULT_PORT,
+    domain: loaded.config.live?.domain ?? (infra.env.NGROK_DOMAIN || null)
+  };
 
   const commit =
     options.commit ?? (await infra.gitHead(dirname(resolve(options.config))));
@@ -160,7 +176,10 @@ export async function runRunCommand(
   if (options.dryRun) return EXIT_OK;
   const command = describeCommand(options);
   if (local) {
-    return runLocal({ plan, config: loaded.config, command, options }, deps);
+    return runLocal(
+      { plan, config: loaded.config, command, options, live },
+      deps
+    );
   }
   const agentKey = await infra.ssh.generateKeyPair();
 
@@ -191,7 +210,8 @@ export async function runRunCommand(
         configPath: options.config,
         config: loaded.config,
         command,
-        agentKey: agentKey.privateKey
+        agentKey: agentKey.privateKey,
+        live
       }),
     { authorizedKeys: [agentKey.publicKey] }
   );
@@ -233,6 +253,7 @@ async function runLocal(
     config: PerfkitConfig;
     command: string;
     options: RunCommandOptions;
+    live: LiveSettings;
   },
   deps: CliDeps
 ): Promise<number> {
@@ -269,7 +290,8 @@ async function runLocal(
         vpcCidr: "127.0.0.0/8"
       },
       projectDir: dirname(resolve(options.config)),
-      out: options.out
+      out: options.out,
+      live: input.live
     });
   } catch (err) {
     deps.stderr(`perfkit: ${messageOf(err)}\n`);

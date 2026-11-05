@@ -41,6 +41,7 @@ Rules for both files:
 | :--- | :--- | :--- |
 | `project.name`, `repo`, `siteUrl`, `accent`, `title`, `lead` | string | Copied from perfkit.yaml. |
 | `project.logoSvg` | string | The SVG markup of `project.logo`, inlined. Present only when perfkit.yaml has `logo`. |
+| `project.live.url` | URL | Where the latest page polls live.json: `project.live.url`, else `live.url`, else `https://<live.domain>/live.json` of perfkit.yaml. Absent without them. |
 
 ### run
 
@@ -149,3 +150,34 @@ A benchmark's `headline` in runs.json is:
 - `passed` or `failed`, capacity: `{ limitCps, p99AtLimitMs }`, both `null` when no step passed;
 - `passed` or `failed`, soak: `{ memoryGrowthMBPerHour }`;
 - `not-run`, `inconclusive` and `aborted`: `null`.
+
+## live.json
+
+`schema: perfkit/live/v1`, JSON Schema in [schemas/live-v1.schema.json](../schemas/live-v1.schema.json).
+The agent rewrites it every 15 seconds for the whole run (a temporary file, then a rename) and
+serves it; nothing is kept after the run. Every number in it is preliminary: verdicts come only
+from report.json.
+
+| Field | Type | Notes |
+| :--- | :--- | :--- |
+| `runId`, `version`, `commit`, `startedAt` | | As in report.json. |
+| `updatedAt` | timestamp | When this snapshot was written. |
+| `status` | `running`, `finished` or `failed` | `failed` when the agent stopped the run; `reason` says why. |
+| `estimatedEndAt` | timestamp or null | While running: the planned time left of the running benchmark and every queued one, plus a fixed allowance per benchmark. |
+| `provider` | `digitalocean` or `local` | |
+| `project` | object | As report.json's `project`. |
+| `benchmarks` | list | Every benchmark of perfkit.yaml, in order. |
+
+Every benchmark has `id`, `title`, `unit`, `kind`, `state` (`queued`, `running`, `done` or
+`not-run`, the last for one not selected), `startedAt` (compose up), `loadStartedAt` (SIPp's
+start), `estimatedStartAt` (queued only) and `plannedS`. Then by kind:
+
+- **capacity:** `rate` (`start`, `step`, `everyS`, `max`), `thresholds`, `current` (`index`,
+  `total`, `offeredCps` of the step offered now, from the clock), `points` (each step as the
+  agent judged it when it ended: `offeredCps`, `achievedCps`, `calls`, `failed`, `p50Ms`,
+  `p95Ms`, `p99Ms`, `failedPct`, `ok`, `stopReason`), `heldCps` (the last step that passed) and,
+  once done, `result` (`limitCps`, `lowerBound`, `stopReason`).
+- **soak:** `cps`, `warmupS`, `durationS`, `elapsedS`, `thresholds`, `calls` (`placed`, `failed`
+  so far, SIPp's counters since the load started) and `memory`: per process, its raw RSS
+  (`samples` of `t`, `rssMB`, at most 300, evenly spaced) and `growthMBPerHour`, the verdict's
+  least-squares slope, `null` until there is a full hour of samples after the warm-up.

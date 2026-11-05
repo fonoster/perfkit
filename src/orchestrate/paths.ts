@@ -7,6 +7,7 @@ export function runPaths(root: string) {
     root,
     runJson: `${root}/run.json`,
     status: `${root}/status.json`,
+    live: `${root}/live.json`,
     progress: `${root}/progress.log`,
     done: `${root}/done`,
     failed: `${root}/failed`,

@@ -9,7 +9,7 @@ import {
   parseUdpJsonl,
   readSippResults
 } from "../analyze/index.js";
-import type { CapacityBenchmarkConfig } from "../schemas/index.js";
+import type { CapacityBenchmarkConfig, LivePoint } from "../schemas/index.js";
 import { liveAnalyzeDeps } from "./liveAnalyzeDeps.js";
 import type { AgentFs } from "./types.js";
 
@@ -18,6 +18,8 @@ export interface StepEvaluation {
   line: string;
   /** True when the ramp ends here: a rule broken or the step invalid. */
   stop: boolean;
+  /** The step's numbers for live.json; null when SIPp wrote nothing. */
+  point: LivePoint | null;
 }
 
 /**
@@ -47,7 +49,11 @@ export async function evaluateCapacityStep(input: {
     benchmark.load.uac.scenario
   );
   if (uac === null) {
-    return { line: `${prefix}  SIPp wrote no results; stopping`, stop: true };
+    return {
+      line: `${prefix}  SIPp wrote no results; stopping`,
+      stop: true,
+      point: null
+    };
   }
   const read = async (file: string) =>
     names.includes(file) ? deps.readFile(join(rawDir, file)) : "";
@@ -79,7 +85,23 @@ export async function evaluateCapacityStep(input: {
         : measured.failedPct >= failedCallsPct
           ? "over the failed limit; stopping"
           : "ok";
-  return { line: `${numbers}  ${outcome}`, stop: outcome !== "ok" };
+  const stop = outcome !== "ok";
+  return {
+    line: `${numbers}  ${outcome}`,
+    stop,
+    point: {
+      offeredCps,
+      achievedCps: measured.step.achievedCps,
+      calls: measured.step.calls,
+      failed: measured.step.failed,
+      p50Ms: measured.step.p50Ms,
+      p95Ms: measured.step.p95Ms,
+      p99Ms: p99,
+      failedPct: measured.failedPct,
+      ok: !stop,
+      stopReason: stop ? outcome.replace(/; stopping$/, "") : null
+    }
+  };
 }
 
 function formatRate(value: number): string {

@@ -60,7 +60,8 @@ describe("createDrawRun", () => {
       expect(result).to.deep.equal({
         ok: true,
         runId: ID,
-        html: expected("latest")
+        html: expected("latest"),
+        liveUrl: null
       });
       expect(fetched).to.deep.equal([
         "data/runs.json",
@@ -82,8 +83,32 @@ describe("createDrawRun", () => {
       expect(result).to.deep.equal({
         ok: true,
         runId: ID,
-        html: expected("run")
+        html: expected("run"),
+        liveUrl: null
       });
+    });
+
+    it("should return the project's live.json URL from the report", async () => {
+      // Arrange
+      const withLive = {
+        ...report,
+        project: {
+          ...(report.project as object),
+          live: { url: "https://perfkit.ngrok.app/live.json" }
+        }
+      };
+      const { drawRun } = drawWith({
+        "data/runs.json": runs,
+        [`data/runs/${ID}/report.json`]: withLive
+      });
+
+      // Act
+      const result = await drawRun({ path: "" });
+
+      // Assert
+      expect(result.ok && result.liveUrl).to.equal(
+        "https://perfkit.ngrok.app/live.json"
+      );
     });
 
     it("should read a report of the old layout from runs/<id>/", async () => {

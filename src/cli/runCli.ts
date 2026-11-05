@@ -111,6 +111,19 @@ Exit codes:
   2  the report or the history is invalid, unreadable or of another schema
   3  the history URL could not be fetched (a 404 means no history)`;
 
+const SERVE_HELP = `
+A read-only static server for the directory perfkit render wrote, as GitHub
+Pages serves it, with nothing cached. To watch a run on this machine live:
+
+  perfkit serve --site out/benchmarks --port 8080
+  perfkit run --local --config perf/perfkit.yaml --target-version <tag>
+  open "http://localhost:8080/?live=http://localhost:8787/live.json"
+
+Exit codes:
+  0  stopped with Ctrl-C
+  1  usage error
+  2  the site could not be served (the port is taken)`;
+
 const SUMMARY_HELP = `
 Prints the report as GitHub Markdown, for a workflow's run summary:
   perfkit summary --report .perfkit/<run id>/report.json >> "$GITHUB_STEP_SUMMARY"
@@ -205,6 +218,10 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       "run on this machine's Docker instead of DigitalOcean; needs no token",
       false
     )
+    .option(
+      "--live-port <port>",
+      "the port live.json is served on (default: live.port of perfkit.yaml, else 8787)"
+    )
     .addHelpText("after", RUN_HELP)
     .action(
       async (options: {
@@ -216,6 +233,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         detach: boolean;
         dryRun: boolean;
         local: boolean;
+        livePort?: string;
       }) => {
         exitCode = await runRunCommand(options, deps);
       }
@@ -311,6 +329,44 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         exitCode = EXIT_VALID;
       }
     );
+
+  program
+    .command("serve")
+    .description(
+      "Serve a rendered benchmarks site on this machine, to preview it or watch a --local run live."
+    )
+    .requiredOption("--site <dir>", "the site directory perfkit render wrote")
+    .option("--port <port>", "the port to listen on", "8080")
+    .option("--host <address>", "the address to listen on", "127.0.0.1")
+    .addHelpText("after", SERVE_HELP)
+    .action(async (options: { site: string; port: string; host: string }) => {
+      const port = Number(options.port);
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        deps.stderr("perfkit: --port: expected a port from 0 to 65535\n");
+        exitCode = EXIT_USAGE;
+        return;
+      }
+      if (!deps.serveSite) {
+        deps.stderr("perfkit: serve is not available here\n");
+        exitCode = EXIT_INVALID;
+        return;
+      }
+      const served = await deps
+        .serveSite({ site: options.site, port, host: options.host })
+        .catch((err: unknown) => err as Error);
+      if (served instanceof Error) {
+        deps.stderr(
+          `perfkit: cannot serve ${options.site}: ${served.message}\n`
+        );
+        exitCode = EXIT_INVALID;
+        return;
+      }
+      deps.stdout(
+        `serving ${options.site} at http://${options.host}:${served.port}/ (Ctrl-C stops)\n`
+      );
+      await served.stopped;
+      exitCode = EXIT_VALID;
+    });
 
   program
     .command("summary")

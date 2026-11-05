@@ -11,8 +11,8 @@ import {
 import { computeHops } from "./computeHops.js";
 import { countRestarts } from "./countRestarts.js";
 import { durationToSeconds } from "./durationToSeconds.js";
-import { leastSquaresSlope } from "./leastSquaresSlope.js";
 import { listRawDir } from "./listRawDir.js";
+import { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
 import { nearestRank } from "./nearestRank.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
 import { parseOtlpSpanLines } from "./parseOtlpSpans.js";
@@ -148,16 +148,7 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
 
     const growth = uutProcesses.map((name) => ({
       name,
-      slope: roundTo(
-        leastSquaresSlope(
-          after
-            .filter((sample) => sample.name === name)
-            .map((sample) => ({
-              x: (sample.tMs - warmupEndMs) / HOUR_MS,
-              y: sample.rssKB / 1024
-            }))
-        )
-      )
+      slope: memoryGrowthMBPerHour(after, name, warmupEndMs)
     }));
     const rules: SoakRule[] = [
       ...growth.map<SoakRule>(({ name, slope }) => ({

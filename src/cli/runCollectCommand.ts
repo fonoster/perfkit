@@ -10,6 +10,7 @@ import {
   formatDeleteFailure,
   messageOf
 } from "../infra/index.js";
+import { LIVE_DEFAULT_PORT } from "../live/constants.js";
 import { REMOTE_ROOT } from "../orchestrate/constants.js";
 import { createCollect } from "../orchestrate/createCollect.js";
 import { createLocalRemote } from "../orchestrate/createLocalRemote.js";
@@ -77,23 +78,42 @@ export async function runCollectCommand(
   const localText = await readFile(dirs.local, "utf8").catch(() => null);
   if (localText !== null) {
     const { root } = JSON.parse(localText) as { root: string };
-    const config = await readFile(runPaths(root).runJson, "utf8")
-      .then((text) => runStateSchema.parse(JSON.parse(text)).config)
+    const state = await readFile(runPaths(root).runJson, "utf8")
+      .then((text) => runStateSchema.parse(JSON.parse(text)))
       .catch(() => null);
-    return createCollect({
-      ...common,
-      remote: createLocalRemote({ run: infra.runProgram }),
-      root,
-      teardown: async () => {
-        const result = config
-          ? await localTeardown(options.runId, config, infra)
-          : { summary: "", failures: [] };
-        if (result.failures.length === 0) {
-          await rm(dirs.dir, { recursive: true, force: true }).catch(() => {});
+    const config = state?.config ?? null;
+    // The agent's files are on this machine, so this process serves
+    // live.json while it follows the run.
+    const live =
+      state && infra.serveLive && !options.wait
+        ? await infra
+            .serveLive({
+              root,
+              live: state.live ?? { port: LIVE_DEFAULT_PORT, domain: null },
+              siteUrl: state.config.project.siteUrl
+            })
+            .catch(() => null)
+        : null;
+    try {
+      return await createCollect({
+        ...common,
+        remote: createLocalRemote({ run: infra.runProgram }),
+        root,
+        teardown: async () => {
+          const result = config
+            ? await localTeardown(options.runId, config, infra)
+            : { summary: "", failures: [] };
+          if (result.failures.length === 0) {
+            await rm(dirs.dir, { recursive: true, force: true }).catch(
+              () => {}
+            );
+          }
+          return result;
         }
-        return result;
-      }
-    })(input);
+      })(input);
+    } finally {
+      await live?.close().catch(() => {});
+    }
   }
 
   const token = infra.env.DIGITALOCEAN_TOKEN;

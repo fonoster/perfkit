@@ -2,6 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { z } from "zod/v4";
+import { liveSchema } from "./live.schema.js";
 import { perfkitConfigSchema } from "./perfkitConfig.schema.js";
 import { reportSchema } from "./report.schema.js";
 import { runsSchema } from "./runs.schema.js";
@@ -18,7 +19,8 @@ export function toJsonSchemaFiles(): Record<string, string> {
       io: "input"
     }),
     "report-v1.schema.json": z.toJSONSchema(reportSchema),
-    "runs-v1.schema.json": z.toJSONSchema(runsSchema)
+    "runs-v1.schema.json": z.toJSONSchema(runsSchema),
+    "live-v1.schema.json": z.toJSONSchema(liveSchema)
   };
   return Object.fromEntries(
     Object.entries(files).map(([name, schema]) => [

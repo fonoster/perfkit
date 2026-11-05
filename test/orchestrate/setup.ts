@@ -148,7 +148,12 @@ export function agentRunner(hosts: FakeHosts, root = REMOTE_ROOT) {
 export async function doSetup(
   options: {
     files?: RawFiles;
-    env?: { DIGITALOCEAN_TOKEN?: string; PERFKIT_SSH_KEY?: string };
+    env?: {
+      DIGITALOCEAN_TOKEN?: string;
+      PERFKIT_SSH_KEY?: string;
+      NGROK_AUTHTOKEN?: string;
+      NGROK_DOMAIN?: string;
+    };
     agentOnStart?: boolean;
   } = {}
 ) {

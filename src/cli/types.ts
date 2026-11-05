@@ -11,7 +11,9 @@ import type {
   Sleep,
   SshTools
 } from "../infra/index.js";
+import type { Closable } from "../live/types.js";
 import type { AgentOutcome } from "../orchestrate/createAgent.js";
+import type { LiveSettings } from "../orchestrate/runState.schema.js";
 import type { PerfkitConfig } from "../schemas/index.js";
 import type { RenderSiteDeps } from "../render/types.js";
 import type { ValidateFileDeps } from "../validate/types.js";
@@ -34,6 +36,8 @@ export interface RunOptions {
   command: string;
   /** The run-only private key the agent logs in to the UUT with. */
   agentKey: string;
+  /** Where the agent serves live.json, and its ngrok domain. */
+  live?: LiveSettings;
 }
 
 /**
@@ -49,7 +53,14 @@ export type BenchmarkExecutor = (
 
 /** Everything `run` and `sweep` reach outside the process, injected. */
 export interface InfraCliDeps {
-  env: { DIGITALOCEAN_TOKEN?: string; PERFKIT_SSH_KEY?: string };
+  env: {
+    DIGITALOCEAN_TOKEN?: string;
+    PERFKIT_SSH_KEY?: string;
+    /** Opens an ngrok tunnel to live.json; never printed or written. */
+    NGROK_AUTHTOKEN?: string;
+    /** The static ngrok domain when perfkit.yaml has no live.domain. */
+    NGROK_DOMAIN?: string;
+  };
   now: Now;
   sleep: Sleep;
   signals?: SignalSource;
@@ -69,12 +80,30 @@ export interface InfraCliDeps {
   namePrefix: string;
   /** The real executor when not set. */
   executeBenchmarks?: BenchmarkExecutor;
+  /**
+   * Serves a --local run's live.json from this machine while `run` or
+   * `collect` follows it; absent, nothing is served.
+   */
+  serveLive?: (input: {
+    root: string;
+    live: LiveSettings;
+    siteUrl: string;
+  }) => Promise<Closable>;
   /** `perfkit agent`, on the load generator. */
   runAgent: (input: { root: string; runId: string }) => Promise<AgentOutcome>;
 }
 
 export interface CliDeps extends ValidateFileDeps, RenderSiteDeps {
   version: string;
+  /**
+   * `perfkit serve`: serves a site directory until Ctrl-C; `stopped`
+   * resolves once it has stopped. Rejects when it can't listen.
+   */
+  serveSite?: (input: {
+    site: string;
+    port: number;
+    host: string;
+  }) => Promise<{ port: number; stopped: Promise<void> }>;
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   infra: InfraCliDeps;

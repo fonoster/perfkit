@@ -91,3 +91,28 @@ N runs" shows the rest.
 
 The droplets and region, each image with its digest, the tools, and the command to run the same
 benchmarks yourself.
+
+## The live view
+
+While a run is in progress, the latest page (the site root, never a run page) shows it live from
+the agent's live.json, polled every 15 seconds; see "Live results" in the README. The design is
+the "State / Live (preliminary)" frame of `designs/benchmarks.pen`.
+
+- **Nav and banner.** The picker reads "Running now · v<version>" with a live dot and badge.
+  Under the nav: "Running now. These numbers are preliminary and change every 15 seconds; the
+  verdict appears when the run ends." and "updated N s ago", which turns warning-coloured after a
+  minute and reads "connection lost, retrying" after 3 minutes or a failed poll.
+- **Header and progress.** "LIVE · RUN <id>", "<Project> <version> is under test right now.",
+  one card per step (setup, then each benchmark: done, running or queued with its expected start)
+  and a bar with when the run should end.
+- **Live numbers.** For the benchmark running now: the rate offered (and placed, last step),
+  p99 and failed % of the last step (a soak: calls placed and failed % so far), and the time into
+  the run with the time to go.
+- **Capacity.** The same "Latency as load rises" chart as the report, drawn up to the step
+  offered now, marked "now <rate>", the steps not run yet shaded; and "So far": what held, why the
+  limit is not known yet, and the last published limit from `data/runs.json`.
+- **Soak.** Raw memory per process with the warm-up shaded and a "now" line. Growth in MB/h shows
+  only once there is a full hour of data after the warm-up.
+
+When the run ends the page says the report is being published, and draws it once
+`data/runs.json` lists the run. Animations stop under `prefers-reduced-motion`.

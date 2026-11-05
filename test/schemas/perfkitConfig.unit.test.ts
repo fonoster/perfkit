@@ -52,6 +52,36 @@ describe("perfkitConfigSchema", () => {
       );
     });
 
+    it("should accept a live section and default its port to 8787", () => {
+      // Arrange
+      const raw = loadConfig();
+      raw.live = { domain: "routr-benchmarks.ngrok-free.dev" };
+      raw.project.live = {
+        url: "https://routr-benchmarks.ngrok-free.dev/live.json"
+      };
+
+      // Act
+      const config = perfkitConfigSchema.parse(raw);
+
+      // Assert
+      expect(config.live).to.deep.equal({
+        domain: "routr-benchmarks.ngrok-free.dev",
+        port: 8787
+      });
+      expect(config.project.live?.url).to.equal(
+        "https://routr-benchmarks.ngrok-free.dev/live.json"
+      );
+    });
+
+    it("should reject a live domain that is not a hostname, and a bad port", () => {
+      const raw = loadConfig();
+      raw.live = { domain: "https://x.ngrok.app", port: 0 };
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        'live.domain: expected a hostname like perfkit.ngrok.app; got "https://x.ngrok.app"',
+        "live.port: expected a port from 1 to 65535; got 0"
+      ]);
+    });
+
     it("should accept a project without a logo", () => {
       const raw = loadConfig();
       delete raw.project.logo;

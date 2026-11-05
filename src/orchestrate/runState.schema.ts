@@ -29,6 +29,11 @@ const machineInfoSchema = z.strictObject({
   docker: nonEmptyString
 });
 
+export const liveSettingsSchema = z.strictObject({
+  port: z.number().int().min(1).max(65535),
+  domain: z.string().min(1).nullable()
+});
+
 export const runModeSchema = z.enum(["digitalocean", "local"]);
 
 export const runStateSchema = z.strictObject({
@@ -57,7 +62,9 @@ export const runStateSchema = z.strictObject({
   tools: z.strictObject({
     sipp: nonEmptyString,
     otelcol: nonEmptyString.optional()
-  })
+  }),
+  /** Where live.json is served, and the static ngrok domain, if any. */
+  live: liveSettingsSchema.optional()
 });
 
 const benchmarkStatusSchema = z.strictObject({
@@ -80,6 +87,7 @@ export const agentInputSchema = z.strictObject({
   runId: runIdSchema
 });
 
+export type LiveSettings = z.infer<typeof liveSettingsSchema>;
 export type RunMode = z.infer<typeof runModeSchema>;
 export type RunState = z.infer<typeof runStateSchema>;
 export type RunStatus = z.infer<typeof runStatusSchema>;

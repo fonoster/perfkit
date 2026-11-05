@@ -94,4 +94,35 @@ describe("perfkit run --local", () => {
     expect(hosts.commands).to.deep.equal([]);
     expect(infra.clients).to.deep.equal([]);
   });
+
+  it("should serve the run's live.json from this machine while it follows the run, then close it", async () => {
+    // Arrange
+    const { infra, out } = await localSetup();
+    const served: Array<{ root: string; live: unknown; siteUrl: string }> = [];
+    let closed = 0;
+    infra.serveLive = async (input) => {
+      served.push(input);
+      return {
+        close: async () => {
+          closed += 1;
+        }
+      };
+    };
+
+    // Act
+    const result = await perfkit(
+      [...MINIMAL, "--local", "--out", out, "--live-port", "8799"],
+      infra
+    );
+
+    // Assert
+    expect(result.code).to.equal(0);
+    expect(served).to.have.length(1);
+    expect(served[0]?.live).to.deep.equal({ port: 8799, domain: null });
+    expect(served[0]?.siteUrl).to.equal(
+      "https://fonoster.github.io/perfkit/benchmarks"
+    );
+    expect(served[0]?.root).to.match(/\.perfkit\/runs\/[^/]+\/root$/);
+    expect(closed).to.equal(1);
+  });
 });

@@ -17,6 +17,12 @@ export interface LatencyChartInput {
   limit: { cps: number; lowerBound: boolean; p99Ms: number | null } | null;
   /** The run stopped early: the chart shows what was measured. */
   partial: boolean;
+  /**
+   * A ramp in progress (the live page): the x axis spans the whole ramp,
+   * the step offered now is marked and the steps not run yet are shaded.
+   * Left out, the chart is the final report's, unchanged.
+   */
+  live?: { maxCps: number; nowCps: number };
 }
 
 const W = 820;
@@ -39,8 +45,17 @@ const SERIES = [
  */
 export function renderLatencyChart(input: LatencyChartInput): string {
   const { steps, thresholdMs, limit } = input;
-  const maxCps = Math.max(...steps.map((s) => s.offeredCps), limit?.cps ?? 0);
-  const maxMs = Math.max(...steps.map((s) => s.p99Ms), thresholdMs ?? 0);
+  const { live } = input;
+  const maxCps = Math.max(
+    ...steps.map((s) => s.offeredCps),
+    limit?.cps ?? 0,
+    live?.maxCps ?? 0
+  );
+  const maxMs = Math.max(
+    ...steps.map((s) => s.p99Ms),
+    thresholdMs ?? 0,
+    live ? 1 : 0
+  );
   const xScale = niceScale(maxCps);
   const yScale = niceScale(maxMs * 1.05);
   const sx = (cps: number) => LEFT + (cps / xScale.max) * (RIGHT - LEFT);
@@ -98,13 +113,17 @@ export function renderLatencyChart(input: LatencyChartInput): string {
 <text class="axis-unit" x="0" y="12">ms</text>${grid}
 <line class="axis" x1="${LEFT}" x2="${RIGHT}" y1="${BOTTOM}" y2="${BOTTOM}"/>${xTicks}
 <text class="axis-unit" x="${(LEFT + RIGHT) / 2}" y="${H - 2}" text-anchor="middle">offered ${esc(input.unit)}/s</text>
-${overLimit}${threshold}${lines}${limitMarker}
+${live ? liveRegion(live, steps, sx) : ""}${overLimit}${threshold}${lines}${limitMarker}${live ? liveMarker(live, steps, input.unit, sx, sy) : ""}
 </svg>`;
 
-  const legend = SERIES.map(
-    (s) =>
-      `<li><span class="swatch ${s.className}" aria-hidden="true"></span>${s.label}</li>`
-  ).join("");
+  const legend =
+    SERIES.map(
+      (s) =>
+        `<li><span class="swatch ${s.className}" aria-hidden="true"></span>${s.label}</li>`
+    ).join("") +
+    (live
+      ? '<li class="legend-live"><span class="live-dot" aria-hidden="true"></span>live</li>'
+      : "");
 
   const rows = steps
     .map(
@@ -127,4 +146,33 @@ ${overLimit}${threshold}${lines}${limitMarker}
 </table></div>
 </details>
 </figure>`;
+}
+
+/** The steps not run yet, shaded from the step offered now to the end. */
+function liveRegion(
+  live: { maxCps: number; nowCps: number },
+  steps: ReadonlyArray<Step>,
+  sx: (cps: number) => number
+): string {
+  const from = sx(Math.max(live.nowCps, steps.at(-1)?.offeredCps ?? 0));
+  if (from >= RIGHT - 1) return "";
+  return `<rect class="not-run" x="${from.toFixed(1)}" y="${TOP}" width="${(RIGHT - from).toFixed(1)}" height="${BOTTOM - TOP}"/><text class="not-run-label" x="${((from + RIGHT) / 2).toFixed(1)}" y="${((TOP + BOTTOM) / 2).toFixed(1)}" text-anchor="middle">steps not run yet</text>`;
+}
+
+/** "now <rate>": a tag over the last measured p99, or the axis at first. */
+function liveMarker(
+  live: { maxCps: number; nowCps: number },
+  steps: ReadonlyArray<Step>,
+  unit: string,
+  sx: (cps: number) => number,
+  sy: (ms: number) => number
+): string {
+  const last = steps.at(-1);
+  const x = sx(last?.offeredCps ?? live.nowCps);
+  const y = last ? sy(last.p99Ms) : BOTTOM;
+  const text = `now ${formatRate(live.nowCps, unit)}`;
+  const width = text.length * 7.4 + 16;
+  const tagX = Math.min(Math.max(x - width / 2, LEFT), RIGHT - width);
+  const tagY = Math.max(y - 44, TOP);
+  return `${last ? `<circle class="now-halo" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="11"/><circle class="now-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5"/>` : ""}<rect class="now-tag" x="${tagX.toFixed(1)}" y="${tagY.toFixed(1)}" width="${width.toFixed(1)}" height="22" rx="4"/><text class="now-tag-text" x="${(tagX + width / 2).toFixed(1)}" y="${(tagY + 15).toFixed(1)}" text-anchor="middle">${esc(text)}</text>`;
 }

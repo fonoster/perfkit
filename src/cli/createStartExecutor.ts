@@ -54,7 +54,11 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
       },
       projectDir: dirname(options.configPath),
       out: options.out,
-      agentKey: options.agentKey
+      agentKey: options.agentKey,
+      ...(options.live ? { live: options.live } : {}),
+      ...(infra.env.NGROK_AUTHTOKEN
+        ? { ngrokToken: infra.env.NGROK_AUTHTOKEN }
+        : {})
     });
     ctx.handOff();
     return { passed: true };

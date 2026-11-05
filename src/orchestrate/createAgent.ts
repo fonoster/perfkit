@@ -63,7 +63,9 @@ export function createAgent(deps: AgentDeps) {
         plannedS: plannedSeconds(benchmark)
       };
       await save();
+      deps.live?.started(benchmark.id, deps.now());
       await runBenchmark(benchmark);
+      deps.live?.done(benchmark.id, deps.now());
       status.benchmarks[benchmark.id] = {
         ...status.benchmarks[benchmark.id]!,
         state: "done"
@@ -83,12 +85,14 @@ export function createAgent(deps: AgentDeps) {
           : `the agent failed: ${err instanceof Error ? err.message : String(err)}`;
       await deps.fs.writeFile(paths.failed, `${message}\n`);
       status.failed = message;
+      deps.live?.failed(message);
       status.endedAt = new Date(deps.now()).toISOString();
       await save();
       await deps.log(`perfkit agent: ${message}`);
       return { status: "failed", message };
     }
     status.done = true;
+    deps.live?.finished();
     status.endedAt = new Date(deps.now()).toISOString();
     await save();
     await deps.fs.writeFile(paths.done, `${status.endedAt}\n`);

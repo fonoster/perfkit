@@ -9,6 +9,7 @@ import {
 } from "../schemas/index.js";
 import { NOT_SELECTED } from "./constants.js";
 import type { RunState } from "./runState.schema.js";
+import { toReportProject } from "./toReportProject.js";
 
 /**
  * The run's report.json v1 from its state and the results of the selected
@@ -42,15 +43,7 @@ export function buildReport(
     benchmarks.filter((benchmark) => benchmark.verdict === verdict).length;
   const report = {
     schema: SCHEMA_IDS.report,
-    project: {
-      name: config.project.name,
-      repo: config.project.repo,
-      siteUrl: config.project.siteUrl,
-      accent: config.project.accent,
-      ...(state.logoSvg ? { logoSvg: state.logoSvg } : {}),
-      title: config.project.title,
-      lead: config.project.lead
-    },
+    project: toReportProject(state),
     run: {
       id: plan.runId,
       version: plan.targetVersion,

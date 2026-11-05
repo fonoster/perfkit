@@ -28,6 +28,7 @@ export {
 export { createNodeAnalyzeDeps } from "./createNodeAnalyzeDeps.js";
 export { durationToSeconds } from "./durationToSeconds.js";
 export { leastSquaresSlope } from "./leastSquaresSlope.js";
+export { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
 export {
   MAX_SIPP_CPU_PCT,
   measureCapacityStep,

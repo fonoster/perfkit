@@ -4,6 +4,7 @@
 import type { Resources } from "../../schemas/index.js";
 import { formatDuration, formatGrowth, formatNumber } from "../format.js";
 import { esc } from "../html.js";
+import { icon } from "../icons.js";
 import { linePath } from "./linePath.js";
 import { niceScale } from "./niceScale.js";
 
@@ -17,6 +18,12 @@ export interface MemoryChartInput {
   growth: ReadonlyMap<string, number>;
   /** The run stopped early: the chart shows what was measured. */
   partial: boolean;
+  /**
+   * A soak in progress (the live page): the x axis starts when the load
+   * started and spans `durationS`, with a "now" line at `nowS` and a note
+   * under the chart. Left out, the chart is the final report's, unchanged.
+   */
+  live?: { startMs: number; nowS: number | null; note: string | null };
 }
 
 const W = 820;
@@ -39,8 +46,11 @@ export function renderMemoryChart(input: MemoryChartInput): string {
   const times = withSamples.flatMap((p) =>
     p.samples.map((s) => Date.parse(s.t))
   );
+  const { live } = input;
   const end = Math.max(...times);
-  const start = Math.min(end - input.durationS * 1000, ...times);
+  const start = live
+    ? live.startMs
+    : Math.min(end - input.durationS * 1000, ...times);
   const domainS = Math.max((end - start) / 1000, input.durationS, 1);
   const maxMB = Math.max(
     ...withSamples.flatMap((p) => p.samples.map((s) => s.rssMB))
@@ -73,7 +83,7 @@ export function renderMemoryChart(input: MemoryChartInput): string {
 
   const warmup =
     input.warmupS && input.warmupS > 0
-      ? `<rect class="warmup" x="${LEFT}" y="${TOP}" width="${(sx(Math.min(input.warmupS, domainS)) - LEFT).toFixed(1)}" height="${BOTTOM - TOP}"/><text class="warmup-label" x="${LEFT + 6}" y="${TOP + 14}">warm-up</text>`
+      ? `<rect class="warmup" x="${LEFT}" y="${TOP}" width="${(sx(Math.min(input.warmupS, domainS)) - LEFT).toFixed(1)}" height="${BOTTOM - TOP}"/><text class="warmup-label" x="${LEFT + 6}" y="${TOP + 14}">${live ? "warm-up, not measured" : "warm-up"}</text>`
       : "";
 
   const lines = withSamples
@@ -112,7 +122,9 @@ export function renderMemoryChart(input: MemoryChartInput): string {
   const svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Memory per process: resident memory in MB over ${esc(formatDuration(input.durationS))}${input.warmupS ? `, warm-up of ${esc(formatDuration(input.warmupS))} shaded` : ""}. The numbers are in the table under the chart.">
 <text class="axis-unit" x="0" y="12">MB</text>${grid}
 <line class="axis" x1="${LEFT}" x2="${RIGHT}" y1="${BOTTOM}" y2="${BOTTOM}"/>${ticks}
-${warmup}${lines}${labels}${partialMark}
+${warmup}${lines}${labels}${partialMark}${
+    live && live.nowS !== null ? nowLine(sx(Math.min(live.nowS, domainS))) : ""
+  }
 </svg>`;
 
   const legend = withSamples
@@ -134,7 +146,7 @@ ${warmup}${lines}${labels}${partialMark}
 
   return `<figure class="card card-surface chart-card">
 <div class="chart-head">
-<div><h3 class="card-title">Memory per process</h3><p class="card-sub">Resident memory per process in the container</p></div>
+<div><h3 class="card-title">${live ? "Memory per process, raw" : "Memory per process"}</h3><p class="card-sub">Resident memory per process in the container</p></div>
 <div class="chart-head-side">${input.partial ? '<span class="tag">Partial</span>' : ""}<ul class="legend">${legend}</ul></div>
 </div>
 <div class="scroll-x chart-scroll" tabindex="0" role="group" aria-label="Memory chart, scrolls sideways">${svg}</div>
@@ -144,7 +156,7 @@ ${warmup}${lines}${labels}${partialMark}
 <thead><tr><th scope="col">Process</th><th scope="col">First MB</th><th scope="col">Last MB</th><th scope="col">Peak MB</th><th scope="col">Growth after warm-up</th><th scope="col">Samples</th></tr></thead>
 <tbody>${rows}</tbody>
 </table></div>
-</details>
+</details>${live?.note ? `\n<div class="rule-note">${icon("info", 16)}<p>${esc(live.note)}</p></div>` : ""}
 </figure>`;
 }
 
@@ -169,4 +181,10 @@ function spreadLabels(labels: Label[]): Label[] {
       above && label.y - above.y < LABEL_GAP ? above.y + LABEL_GAP : label.y;
     return [...placed, { ...label, y: Math.max(y, TOP + 12) }];
   }, []);
+}
+
+/** The live chart's "now" line, its label inside the plot at the right edge. */
+function nowLine(x: number): string {
+  const nearEdge = x > RIGHT - 40;
+  return `<line class="now-line" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${TOP}" y2="${BOTTOM}"/><text class="now-label" x="${(nearEdge ? x - 6 : x + 6).toFixed(1)}" y="${TOP + 14}"${nearEdge ? ' text-anchor="end"' : ""}>now</text>`;
 }

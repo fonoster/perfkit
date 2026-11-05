@@ -19,6 +19,7 @@ Rules for the whole file:
 | `apiVersion` | `perfkit/v1` | yes | | Tells perfkit which format this is. |
 | `project` | object | yes | | See [project](#project). |
 | `infra` | object | yes | | See [infra](#infra). |
+| `live` | object | no | none | Where the agent serves live.json during a run. See [live](#live). |
 | `images` | map of name to image | yes | | At least one. See [images](#images). |
 | `benchmarks` | list | yes | | At least one. See [benchmarks](#benchmarks). |
 
@@ -33,6 +34,7 @@ Rules for the whole file:
 | `project.logo` | path | no | none | An `.svg` file. Without it, the nav shows `project.name`. |
 | `project.title` | string | yes | | The page's headline. |
 | `project.lead` | string | yes | | The paragraph under the headline. |
+| `project.live.url` | URL | no | `live.url`, else `https://<live.domain>/live.json` | Where the benchmarks page polls a run in progress. Goes into report.json, so the published page knows it. |
 
 ## infra
 
@@ -43,6 +45,24 @@ Rules for the whole file:
 | `infra.uut.size` | string | yes | | Droplet size slug of the unit under test, a dedicated-CPU size like `c-8`. |
 | `infra.loadgen.size` | string | yes | | Droplet size slug of the load generator, like `c-16`. |
 | `infra.maxLifetime` | duration | no | `9h` | The sweep deletes this run's droplets after this long. |
+
+## live
+
+Every run writes `live.json` (`schema: perfkit/live/v1`, see [report-v1.md](report-v1.md#livejson))
+every 15 seconds and serves it read-only on the load generator; with `NGROK_AUTHTOKEN` set, an
+ngrok tunnel makes it public. The page polls it; see "Live results" in the README.
+
+| Field | Type | Required | Default | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| `live.port` | number | no | `8787` | The port of the live.json server. `perfkit run --live-port` overrides it. |
+| `live.domain` | hostname | no | `NGROK_DOMAIN`, else none | The static ngrok domain of the tunnel, like `routr-benchmarks.ngrok-free.dev`. |
+| `live.url` | URL | no | `https://<live.domain>/live.json` | Where the page polls it; `project.live.url` wins. |
+
+```yaml
+live:
+  domain: routr-benchmarks.ngrok-free.dev
+  url: https://routr-benchmarks.ngrok-free.dev/live.json
+```
 
 ## images
 
