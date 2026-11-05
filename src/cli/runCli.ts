@@ -3,6 +3,7 @@
  */
 import { Command, CommanderError } from "commander";
 import { createRenderSite } from "../render/createRenderSite.js";
+import { createSummarizeReport } from "../summary/createSummarizeReport.js";
 import { createValidateFile } from "../validate/createValidateFile.js";
 import {
   DEFAULT_COLLECT_TIMEOUT,
@@ -88,7 +89,8 @@ Exit codes:
   0    the run is done (with --wait), or every benchmark passed
   1    report written, at least one benchmark not passed
   2    bad flags, a missing token or no SSH key for the run
-  3    the agent failed, or no benchmark produced results
+  3    the agent failed (the unfinished benchmarks' raw results are still
+       downloaded), or no benchmark produced results
   4    the timeout passed while the run goes on; nothing deleted
   130  cancelled; with --wait nothing deleted, otherwise everything`;
 const RENDER_HELP = `
@@ -104,6 +106,15 @@ Exit codes:
   2  the report or the history is invalid, unreadable or of another schema
   3  the history URL could not be fetched (a 404 means no history)`;
 
+const SUMMARY_HELP = `
+Prints the report as GitHub Markdown, for a workflow's run summary:
+  perfkit summary --report .perfkit/<run id>/report.json >> "$GITHUB_STEP_SUMMARY"
+
+Exit codes:
+  0  the summary was printed
+  1  usage error
+  2  the report is invalid, unreadable or of another schema`;
+
 /**
  * Runs the perfkit CLI with the given argv (as in process.argv) and returns
  * the exit code. Output goes through `deps.stdout` and `deps.stderr`.
@@ -111,6 +122,7 @@ Exit codes:
 export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const validateFile = createValidateFile(deps);
   const renderSite = createRenderSite(deps);
+  const summarizeReport = createSummarizeReport(deps);
   let exitCode = EXIT_VALID;
   let usageExitCode = EXIT_USAGE;
 
@@ -294,6 +306,24 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         exitCode = EXIT_VALID;
       }
     );
+
+  program
+    .command("summary")
+    .description(
+      "Print a report.json as Markdown, for a GitHub workflow's run summary."
+    )
+    .requiredOption("--report <file>", "the run's report.json")
+    .addHelpText("after", SUMMARY_HELP)
+    .action(async (options: { report: string }) => {
+      const result = await summarizeReport(options);
+      if (!result.ok) {
+        result.errors.forEach((line) => deps.stderr(`${line}\n`));
+        exitCode = EXIT_INVALID;
+        return;
+      }
+      deps.stdout(result.markdown);
+      exitCode = EXIT_VALID;
+    });
 
   try {
     await program.parseAsync(argv);
