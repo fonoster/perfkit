@@ -390,7 +390,8 @@ SIPp adds load in steps, such as 50 more calls/s every minute. For each step:
 - Its latency counts the calls whose request was **sent** in the step, even when the answer came
   in the next one.
 - Its attempted, failed and retransmitted calls are SIPp's 10-second counters (`-trace_stat`)
-  that fall in the step. Failed % is failed / attempted.
+  that fall in the step. Failed % is failed / attempted. So `every` must be a multiple of 10 s:
+  `perfkit validate` rejects a `15s` step, whose counters would mix two steps.
 - **Warm-up.** With `warmup` set, the first step still runs its full `every`, but it is measured
   only from `warmup` after it starts: calls sent, and 10-second counters whose period mid-point
   falls, before that don't count. A cold JIT (EdgePort's JVM and GraalJS) makes the first seconds

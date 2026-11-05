@@ -124,7 +124,7 @@ the other kind rejects them.
 | `load.unit` | string | no | `calls` | What one SIPp call is, as a lowercase plural noun shown on the page (`calls`, `messages`). Copied into each report.json benchmark as `unit`. |
 | `load.rate.start` | number (calls/s) | *capacity*: yes | | The first step's rate. |
 | `load.rate.step` | number (calls/s) | *capacity*: yes | | Added at each step. |
-| `load.rate.every` | duration | *capacity*: yes | | How long each step lasts. |
+| `load.rate.every` | duration | *capacity*: yes | | How long each step lasts. A multiple of 10 s, because SIPp reports its counters every 10 s; `15s` is rejected (`expected a multiple of 10 s (SIPp reports every 10 s); got 15s`). |
 | `load.rate.max` | number (calls/s) | *capacity*: yes | | The ramp stops here. Reaching it without breaking a rule makes the limit a lower bound. |
 | `load.rate.cps` | number (calls/s) | *soak*: yes | | The fixed rate. Keep it well below saturation: a soak looks for leaks, not limits. |
 | `telemetry` | object | no | `{ otlp: false }` | |

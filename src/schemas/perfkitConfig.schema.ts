@@ -10,6 +10,7 @@
 import { z } from "zod/v4";
 import { checkUniqueIds } from "./checkUniqueIds.js";
 import { projectLiveSchema } from "./report.schema.js";
+import { checkStepEveryMultipleOfSippInterval } from "./checkStepEveryMultipleOfSippInterval.js";
 import { checkWarmupShorterThanStep } from "./checkWarmupShorterThanStep.js";
 import {
   benchmarkIdSchema,
@@ -230,7 +231,8 @@ export const capacityBenchmarkConfigSchema = z
     telemetry: telemetrySchema,
     thresholds: capacityThresholdsSchema
   })
-  .superRefine(checkWarmupShorterThanStep);
+  .superRefine(checkWarmupShorterThanStep)
+  .superRefine(checkStepEveryMultipleOfSippInterval);
 
 export const soakBenchmarkConfigSchema = z.strictObject({
   id: benchmarkIdSchema,
