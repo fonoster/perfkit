@@ -62,7 +62,12 @@ export function createDrawRun(deps: DrawRunDeps) {
         perfkitVersion: deps.version
       })
     );
-    return { ok: true, runId: current.id, html };
+    return {
+      ok: true,
+      runId: current.id,
+      html,
+      liveUrl: report.value.project.live?.url ?? null
+    };
   };
 
   async function fetchValid<T extends z.ZodType>(

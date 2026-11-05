@@ -36,6 +36,19 @@
         "lead": {
           "type": "string",
           "minLength": 1
+        },
+        "live": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

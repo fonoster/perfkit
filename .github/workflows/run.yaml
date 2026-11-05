@@ -3,7 +3,7 @@
 #
 #   uses: fonoster/perfkit/.github/workflows/run.yaml@v0.1.0
 #   with: { perfkit-ref: v0.1.0, target-version: 2.31.5, commit: ${{ github.sha }} }
-#   secrets: { DIGITALOCEAN_TOKEN: ..., PERFKIT_SSH_KEY: ... }
+#   secrets: { DIGITALOCEAN_TOKEN: ..., PERFKIT_SSH_KEY: ..., NGROK_AUTHTOKEN: ... (optional) }
 #
 # Secrets come only through `secrets:` below, never `secrets: inherit`.
 name: perfkit run
@@ -36,6 +36,9 @@ on:
         required: true
       PERFKIT_SSH_KEY:
         required: true
+      # Optional: opens the agent's ngrok tunnel to live.json (live.domain in perfkit.yaml).
+      NGROK_AUTHTOKEN:
+        required: false
     outputs:
       run-id:
         description: The run id.
@@ -77,6 +80,8 @@ jobs:
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
           PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+          # Goes into the agent container's environment on the load generator only.
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
           CONFIG: ${{ inputs.config }}
           TARGET_VERSION: ${{ inputs.target-version }}
           COMMIT: ${{ inputs.commit }}

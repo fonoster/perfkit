@@ -32,7 +32,12 @@ export const reasonSchema = z.string().regex(/^[a-z](?:.*[^.])?$/s, {
   error: "expected a lowercase clause with no final period"
 });
 
-const reportProjectSchema = z.strictObject({
+/** Where the benchmarks page polls a run in progress: its live.json URL. */
+export const projectLiveSchema = z.strictObject({
+  url: siteUrlSchema
+});
+
+export const reportProjectSchema = z.strictObject({
   name: nonEmptyString,
   repo: repoSchema,
   siteUrl: siteUrlSchema,
@@ -42,7 +47,8 @@ const reportProjectSchema = z.strictObject({
     .regex(/<svg[\s>]/, { error: "expected inline SVG markup" })
     .optional(),
   title: nonEmptyString,
-  lead: nonEmptyString
+  lead: nonEmptyString,
+  live: projectLiveSchema.optional()
 });
 
 const machineSchema = z.strictObject({

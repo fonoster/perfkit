@@ -339,4 +339,62 @@ describe("perfkit run (orchestration)", () => {
     });
     expect(setup.account.calls).to.deep.equal([]);
   });
+
+  it("should hand NGROK_AUTHTOKEN to the agent's environment only, add ngrok's binding, and keep the live settings in run.json", async () => {
+    // Arrange
+    const setup = await doSetup({
+      env: {
+        DIGITALOCEAN_TOKEN: TOKEN,
+        NGROK_AUTHTOKEN: "ngrok-secret-123",
+        NGROK_DOMAIN: "routr-benchmarks.ngrok-free.dev"
+      }
+    });
+
+    // Act
+    const result = await perfkit(
+      [...MINIMAL, "--out", setup.out, "--live-port", "9876"],
+      setup.infra
+    );
+
+    // Assert
+    expect(result.code).to.equal(0);
+    expect(result.out + result.err).to.not.include("ngrok-secret-123");
+    const commands = allCommands(setup);
+    const agentStart = commands.find((command) =>
+      command.includes(" agent --run ")
+    );
+    expect(agentStart).to.include("-e NGROK_AUTHTOKEN=ngrok-secret-123");
+    expect(
+      commands.some((command) => command.includes("@ngrok/ngrok@"))
+    ).to.equal(true);
+    const runJson = await readFile(
+      join(setup.hosts.roots.loadgen, "run.json"),
+      "utf8"
+    );
+    expect(runJson).to.not.include("ngrok-secret-123");
+    expect(JSON.parse(runJson).live).to.deep.equal({
+      port: 9876,
+      domain: "routr-benchmarks.ngrok-free.dev"
+    });
+  });
+
+  it("should start no tunnel and add no binding without NGROK_AUTHTOKEN", async () => {
+    const setup = await doSetup();
+    await perfkit([...MINIMAL, "--out", setup.out], setup.infra);
+    const commands = allCommands(setup);
+    expect(commands.some((c) => c.includes("NGROK_AUTHTOKEN"))).to.equal(false);
+    expect(commands.some((c) => c.includes("@ngrok/ngrok@"))).to.equal(false);
+  });
+
+  it("should exit 2 for a --live-port that is not a port", async () => {
+    const setup = await doSetup();
+    const result = await perfkit(
+      [...MINIMAL, "--out", setup.out, "--live-port", "http"],
+      setup.infra
+    );
+    expect(result.code).to.equal(2);
+    expect(result.err).to.equal(
+      "perfkit: --live-port: expected a port from 1 to 65535\n"
+    );
+  });
 });

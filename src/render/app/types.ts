@@ -13,4 +13,11 @@ export interface DrawRunDeps {
 }
 
 export type DrawRunResult =
-  { ok: true; runId: string; html: string } | { ok: false; errors: string[] };
+  | {
+      ok: true;
+      runId: string;
+      html: string;
+      /** The project's live.json URL from the report, or null. */
+      liveUrl: string | null;
+    }
+  | { ok: false; errors: string[] };

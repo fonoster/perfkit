@@ -52,6 +52,7 @@ import { runPaths } from "./paths.js";
 import type { RunState } from "./runState.schema.js";
 import { buildOtelcolConfig, buildSamplerSpec } from "./sampler.js";
 import { writeFileCommand } from "./shellQuote.js";
+import type { LiveRecorder } from "../live/types.js";
 import type { AgentFs, Host, HostShell } from "./types.js";
 
 export interface AgentDeps {
@@ -61,6 +62,8 @@ export interface AgentDeps {
   sleep: Sleep;
   /** One progress line, to the agent's log and progress.log. */
   log: (line: string) => Promise<void>;
+  /** Notes for live.json; absent in tests that don't look at it. */
+  live?: LiveRecorder;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -142,6 +145,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         registerUsers
       );
       const startedMs = started.startedMs;
+      if (!started.aborted) deps.live?.loadStarted(benchmark.id, startedMs);
       const monitored = started.aborted
         ? { steps: 0, aborted: started.aborted }
         : await monitor(benchmark, rawDir, startedMs);
@@ -481,6 +485,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         startMs: startedMs
       });
       await deps.log(evaluation.line);
+      if (evaluation.point) deps.live?.point(benchmark.id, evaluation.point);
       if (evaluation.stop || index + 1 >= total) {
         return { steps: index + 1, aborted: null };
       }

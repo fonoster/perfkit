@@ -41,6 +41,8 @@ export {
   capacityHeadlineSchema,
   capacityRuleSchema,
   hopsSchema,
+  projectLiveSchema,
+  reportProjectSchema,
   reasonSchema,
   reportSchema,
   resourcesSchema,
@@ -64,6 +66,22 @@ export {
   type Step,
   type StoppedBy
 } from "./report.schema.js";
+export {
+  LIVE_INTERVAL_S,
+  LIVE_MAX_SAMPLES,
+  LIVE_SCHEMA_ID,
+  liveBenchmarkSchema,
+  liveCapacitySchema,
+  livePointSchema,
+  liveSchema,
+  liveSoakSchema,
+  type Live,
+  type LiveBenchmark,
+  type LiveBenchmarkState,
+  type LiveCapacity,
+  type LivePoint,
+  type LiveSoak
+} from "./live.schema.js";
 export {
   runBenchmarkSchema,
   runEntrySchema,

@@ -22,6 +22,18 @@ import { createDockerEngine } from "./orchestrate/createDockerEngine.js";
 import { createNodeAgentFs } from "./orchestrate/createNodeAgentFs.js";
 import { runPaths } from "./orchestrate/paths.js";
 import { runStateSchema } from "./orchestrate/runState.schema.js";
+import {
+  LIVE_DEFAULT_HOST,
+  LIVE_DEFAULT_PORT,
+  LIVE_LINGER_MS
+} from "./live/constants.js";
+import { createLiveRecorder } from "./live/createLiveRecorder.js";
+import { createNodeServeLive } from "./live/createNodeServeLive.js";
+import { createWriteLive } from "./live/createWriteLive.js";
+import { listenHttp } from "./live/listenHttp.js";
+import { runWithLive } from "./live/runWithLive.js";
+import { createNodeServeSite } from "./serve/createNodeServeSite.js";
+import { LIVE_INTERVAL_S } from "./schemas/index.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -63,7 +75,9 @@ const code = await runCli(process.argv, {
   infra: {
     env: {
       DIGITALOCEAN_TOKEN: process.env.DIGITALOCEAN_TOKEN,
-      PERFKIT_SSH_KEY: process.env.PERFKIT_SSH_KEY
+      PERFKIT_SSH_KEY: process.env.PERFKIT_SSH_KEY,
+      NGROK_AUTHTOKEN: process.env.NGROK_AUTHTOKEN,
+      NGROK_DOMAIN: process.env.NGROK_DOMAIN
     },
     now: () => Date.now(),
     sleep,
@@ -88,24 +102,80 @@ const code = await runCli(process.argv, {
       const state = runStateSchema.parse(
         JSON.parse(await fs.readFile(paths.runJson))
       );
-      return createAgent({
-        shell: createAgentShell({
-          engine: createDockerEngine("/var/run/docker.sock"),
-          state
-        }),
-        fs,
-        now: () => Date.now(),
-        sleep,
+      const shell = createAgentShell({
+        engine: createDockerEngine("/var/run/docker.sock"),
+        state
+      });
+      const recorder = createLiveRecorder();
+      const now = () => Date.now();
+      const log = async (line: string) => {
+        process.stdout.write(`${line}\n`);
+        await fs.appendFile(paths.progress, `${line}\n`);
+      };
+      const writeLive = createWriteLive({ fs, shell, now, state, recorder });
+      // With --local the CLI serves live.json on this machine; the agent
+      // serves it on a droplet, where nothing else can.
+      const remote = state.mode === "digitalocean";
+      return runWithLive(
+        {
+          writeLive: () => writeLive({}),
+          serve: async () =>
+            remote
+              ? createNodeServeLive({
+                  file: paths.live,
+                  siteUrl: state.config.project.siteUrl,
+                  log: (line) =>
+                    log(line.replace(/^perfkit:/, "perfkit agent:"))
+                })({
+                  siteUrl: state.config.project.siteUrl,
+                  port: state.live?.port ?? LIVE_DEFAULT_PORT,
+                  host: LIVE_DEFAULT_HOST,
+                  token: process.env.NGROK_AUTHTOKEN || null,
+                  domain: state.live?.domain ?? null
+                })
+              : { close: async () => {} },
+          sleep,
+          intervalMs: LIVE_INTERVAL_S * 1000,
+          lingerMs: remote ? LIVE_LINGER_MS : 0
+        },
+        () =>
+          createAgent({ shell, fs, now, sleep, log, live: recorder })({
+            root,
+            runId
+          })
+      );
+    },
+    serveLive: async ({ root, live, siteUrl }) =>
+      createNodeServeLive({
+        file: runPaths(root).live,
+        siteUrl,
         log: async (line) => {
-          process.stdout.write(`${line}\n`);
-          await fs.appendFile(paths.progress, `${line}\n`);
+          process.stderr.write(`${line}\n`);
         }
-      })({ root, runId });
-    }
+      })({
+        siteUrl,
+        port: live.port,
+        host: LIVE_DEFAULT_HOST,
+        token: process.env.NGROK_AUTHTOKEN || null,
+        domain: live.domain
+      })
   },
   writeFile: async (path, text) => {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, text, "utf8");
+  },
+  serveSite: async ({ site, port, host }) => {
+    const server = await listenHttp(createNodeServeSite(site), { port, host });
+    const stopped = new Promise<void>((resolve) => {
+      const stop = () => {
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+        server.close().then(resolve);
+      };
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+    });
+    return { port: server.port, stopped };
   },
   fetchText: async (url) => {
     const response = await fetch(url, { redirect: "follow" });

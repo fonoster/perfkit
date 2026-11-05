@@ -13,6 +13,8 @@ import {
   SIPP_BINARY,
   SIPP_IMAGE
 } from "../tools.js";
+import { ngrokBindingCommand } from "../live/ngrokBindingCommand.js";
+import { ngrokVersion } from "../live/ngrokVersion.js";
 import { nameOf, RUN_LABEL } from "./constants.js";
 import { agentKeyPath } from "./createAgentShell.js";
 import { lastLine } from "./errors.js";
@@ -145,6 +147,7 @@ export function createStartRun(deps: StartRunDeps) {
         config: input.config,
         ...(input.logoSvg ? { logoSvg: input.logoSvg } : {}),
         hosts: input.hosts,
+        ...(input.live ? { live: input.live } : {}),
         machines: { uut, loadgen },
         tools: { sipp, ...(otelcol ? { otelcol } : {}) }
       };
@@ -185,6 +188,19 @@ export function createStartRun(deps: StartRunDeps) {
         );
       }
 
+      const tunnel = input.mode === "digitalocean" && input.ngrokToken;
+      if (tunnel) {
+        // The tunnel's native binding for the agent's Linux; a failure only
+        // means no tunnel, so it never stops the run.
+        await remote.exec(
+          "loadgen",
+          ngrokBindingCommand({
+            agentDir: paths.agent,
+            version: await ngrokVersion(deps.packageRoot)
+          }),
+          { timeoutMs: 5 * 60 * 1000 }
+        );
+      }
       const agentName = nameOf(input.namePrefix, input.runId, "agent");
       await exec(
         "loadgen",
@@ -204,6 +220,7 @@ export function createStartRun(deps: StartRunDeps) {
           `${input.root}:${input.root}`,
           "-w",
           input.root,
+          ...(tunnel ? ["-e", `NGROK_AUTHTOKEN=${input.ngrokToken}`] : []),
           NODE_IMAGE,
           "node",
           `${paths.agent}/dist/cli.js`,

@@ -9,6 +9,7 @@
  */
 import { z } from "zod/v4";
 import { checkUniqueIds } from "./checkUniqueIds.js";
+import { projectLiveSchema } from "./report.schema.js";
 import { checkWarmupShorterThanStep } from "./checkWarmupShorterThanStep.js";
 import {
   benchmarkIdSchema,
@@ -40,7 +41,30 @@ const configProjectSchema = z.strictObject({
     })
     .optional(),
   title: nonEmptyString,
-  lead: nonEmptyString
+  lead: nonEmptyString,
+  live: projectLiveSchema.optional()
+});
+
+/**
+ * The agent's live.json server: its port on the load generator, the static
+ * ngrok domain its tunnel uses when NGROK_AUTHTOKEN is set, and the URL the
+ * benchmarks page polls (`project.live.url` is the same and wins).
+ */
+const configLiveSchema = z.strictObject({
+  domain: z
+    .string()
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, {
+      error: "expected a hostname like perfkit.ngrok.app"
+    })
+    .optional(),
+  port: z
+    .number()
+    .int({ error: "expected a whole number" })
+    .min(1, { error: "expected a port from 1 to 65535" })
+    .max(65535, { error: "expected a port from 1 to 65535" })
+    .default(8787),
+  /** Where the page polls live.json; default https://<domain>/live.json. */
+  url: siteUrlSchema.optional()
 });
 
 const machineSizeSchema = z.strictObject({
@@ -231,6 +255,7 @@ export const perfkitConfigSchema = z
     apiVersion: z.literal(SCHEMA_IDS.config),
     project: configProjectSchema,
     infra: configInfraSchema,
+    live: configLiveSchema.optional(),
     images: configImagesSchema,
     benchmarks: z
       .array(benchmarkConfigSchema)
