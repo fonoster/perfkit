@@ -7,12 +7,14 @@
  * with `defer`; it reads which run to draw from the page's URL, fetches
  * the data next to it and replaces the shell with the page. The latest page
  * also polls the project's live.json every 15 seconds and shows a run in
- * progress live; a run page never does.
+ * progress live; a run page never does. The live.json URL is `?live=`, else
+ * the one in data/site.json, else the latest report's.
  */
 import { LIVE_INTERVAL_S, runsSchema } from "../../schemas/index.js";
 import { createDrawRun } from "./createDrawRun.js";
 import { createLiveController } from "./createLiveController.js";
 import { createLiveDomView } from "./createLiveDomView.js";
+import { createReadSiteLiveUrl } from "./createReadSiteLiveUrl.js";
 import { mountPage } from "./mountPage.js";
 import { resolveLiveUrl } from "./resolveLiveUrl.js";
 import { resolveRunPath } from "./resolveRunPath.js";
@@ -86,10 +88,12 @@ const goLive = (liveUrl: string, sitePath: string) => {
 if (path === null) {
   showErrors(document, [`perfkit: ${location.href} is outside the site`]);
 } else {
-  draw(path).then((result) => {
+  const readSiteLiveUrl = createReadSiteLiveUrl({ fetchText });
+  draw(path).then(async (result) => {
     if (resolveRunPath(path)?.page !== "latest") return;
     const liveUrl = resolveLiveUrl(
       location.href,
+      await readSiteLiveUrl(),
       result.ok ? result.liveUrl : null
     );
     if (liveUrl) goLive(liveUrl, path);

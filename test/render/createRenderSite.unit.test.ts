@@ -55,6 +55,7 @@ describe("perfkit render", () => {
         `wrote ${join("out/benchmarks/data/runs", PASSED_ID, "report.json")}`,
         `wrote ${join("out/benchmarks/runs", PASSED_ID, "report.json")}`,
         `wrote ${join("out/benchmarks/data/runs.json")} (14 runs)`,
+        `wrote ${join("out/benchmarks/data/site.json")} (no live URL)`,
         `wrote ${join("out/benchmarks", "index.html")} (latest: ${PASSED_ID})`,
         ...runIds.map(
           (id: string) =>

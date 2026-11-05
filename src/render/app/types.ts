@@ -15,9 +15,10 @@ export interface DrawRunDeps {
 export type DrawRunResult =
   | {
       ok: true;
-      runId: string;
+      /** The run drawn; null for the latest page of a site with no runs. */
+      runId: string | null;
       html: string;
-      /** The project's live.json URL from the report, or null. */
+      /** The project's live.json URL from the report (or site.json), or null. */
       liveUrl: string | null;
     }
   | { ok: false; errors: string[] };

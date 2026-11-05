@@ -13,13 +13,14 @@ import { summaryText } from "./verdicts.js";
  * A page's HTML before the app draws it: the run's title, description and
  * Open Graph tags, so a link preview and a crawler see the run, and the
  * pinned app version, which draws the page from the site's data. The latest
- * page (`index.html`) and every `runs/<id>/index.html` are this shell.
+ * page (`index.html`) and every `runs/<id>/index.html` are this shell. A
+ * site with no runs yet has a latest page with no run.
  */
 export function renderShell(params: {
   /** The project's name, from runs.json. */
   project: string;
-  /** The run the page shows: the newest one on the latest page. */
-  run: RunEntry;
+  /** The run the page shows: the newest one on the latest page; null with no runs yet. */
+  run: RunEntry | null;
   page: PageKind;
   perfkitVersion: string;
   /** The project's favicon, from the report being rendered. */
@@ -27,12 +28,15 @@ export function renderShell(params: {
 }): string {
   const { project, run, page, perfkitVersion, faviconSvg } = params;
   const base = page === "latest" ? "" : "../../";
-  const title = `${project} benchmarks · v${run.version}`;
-  const description = `${summaryText(run.verdict)}. ${project} v${run.version}, run of ${formatDate(run.startedAt)} ${formatTime(run.startedAt)} UTC, commit ${shortCommit(run.commit)}.`;
-  const reportHref =
-    page === "latest"
-      ? `${SITE_PATHS.runDir(run.id)}report.json`
-      : "report.json";
+  const title = run
+    ? `${project} benchmarks · v${run.version}`
+    : `${project} benchmarks`;
+  const description = run
+    ? `${summaryText(run.verdict)}. ${project} v${run.version}, run of ${formatDate(run.startedAt)} ${formatTime(run.startedAt)} UTC, commit ${shortCommit(run.commit)}.`
+    : `${project} benchmarks. No published runs yet.`;
+  const noscript = run
+    ? `This page draws the benchmark results with JavaScript. The results are in <a href="${esc(page === "latest" ? `${SITE_PATHS.runDir(run.id)}report.json` : "report.json")}">report.json</a>.`
+    : "This page draws the benchmark results with JavaScript. No runs are published yet.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -49,7 +53,7 @@ ${renderFaviconLink(faviconSvg)}<meta name="description" content="${esc(descript
 <script defer src="${esc(base + SITE_PATHS.app(perfkitVersion))}"></script>
 </head>
 <body>
-<noscript><p>This page draws the benchmark results with JavaScript. The results are in <a href="${esc(reportHref)}">report.json</a>.</p></noscript>
+<noscript><p>${noscript}</p></noscript>
 </body>
 </html>
 `;

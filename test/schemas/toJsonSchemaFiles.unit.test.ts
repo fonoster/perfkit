@@ -10,12 +10,13 @@ import { ROOT } from "../fixtures.js";
 describe("toJsonSchemaFiles", () => {
   const files = toJsonSchemaFiles();
 
-  it("should write the four v1 schema files", () => {
+  it("should write the five v1 schema files", () => {
     expect(Object.keys(files).sort()).to.deep.equal([
       "live-v1.schema.json",
       "perfkit-v1.schema.json",
       "report-v1.schema.json",
-      "runs-v1.schema.json"
+      "runs-v1.schema.json",
+      "site-v1.schema.json"
     ]);
   });
 

@@ -4,6 +4,7 @@
 import { expect } from "chai";
 import { ValidationError } from "../../../src/errors/ValidationError.js";
 import { createDrawRun } from "../../../src/render/app/createDrawRun.js";
+import { renderEmptyPage } from "../../../src/render/renderEmptyPage.js";
 import { renderRunPage } from "../../../src/render/renderRunPage.js";
 import { toPageContext } from "../../../src/render/toPageContext.js";
 import { toRunEntry } from "../../../src/render/toRunEntry.js";
@@ -162,6 +163,47 @@ describe("createDrawRun", () => {
       expect(first).to.equal("data/runs.json: cannot fetch: HTTP 404");
       expect(second).to.match(/^data\/runs.json: cannot parse: /);
       expect(third).to.equal("data/runs.json: cannot fetch: offline");
+    });
+
+    it("should draw the no-runs page from data/site.json when there are no runs", async () => {
+      // Arrange
+      const project = {
+        ...reportSchema.parse(report).project,
+        live: { url: "https://a.example/live.json" }
+      };
+      const { drawRun, fetched } = drawWith({
+        "data/runs.json": { ...runs, runs: [] },
+        "data/site.json": { schema: "perfkit/site/v1", project }
+      });
+
+      // Act
+      const result = await drawRun({ path: "" });
+
+      // Assert
+      expect(result).to.deep.equal({
+        ok: true,
+        runId: null,
+        html: renderEmptyPage({ project, perfkitVersion: "1.2.3" }),
+        liveUrl: "https://a.example/live.json"
+      });
+      expect(fetched).to.deep.equal(["data/runs.json", "data/site.json"]);
+    });
+
+    it("should return site.json's errors for an invalid one", async () => {
+      // Arrange
+      const { drawRun } = drawWith({
+        "data/runs.json": { ...runs, runs: [] },
+        "data/site.json": { schema: "perfkit/site/v1" }
+      });
+
+      // Act
+      const result = await drawRun({ path: "" });
+
+      // Assert
+      expect(result.ok).to.equal(false);
+      expect(!result.ok && result.errors[0]).to.match(
+        /^data\/site.json: project: /
+      );
     });
 
     it("should say which run or page is missing", async () => {

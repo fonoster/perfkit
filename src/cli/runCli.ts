@@ -100,7 +100,14 @@ Writes to --out:
   runs/<id>/report.json       this run's report, for the page's link
   data/runs.json              the history, newest first, with this run in it
   data/runs/<id>/report.json  this run's report, which the app draws
+  data/site.json              the project: name, branding, live.json URL
   app/<version>/app.js        this perfkit's app, which draws every page
+
+With --config instead of --report, no run is added: the project comes from
+perfkit.yaml and the history is kept as it is. Without --history that is a
+site with no runs yet, which says so and shows a run in progress live:
+
+  perfkit render --config perf/perfkit.yaml --out out/benchmarks
 
 The pages are drawn in the browser from data/, so older reports are never
 read or rewritten, and publishing with a newer perfkit redraws every run.
@@ -108,7 +115,7 @@ read or rewritten, and publishing with a newer perfkit redraws every run.
 Exit codes:
   0  the site was written
   1  usage error
-  2  the report or the history is invalid, unreadable or of another schema
+  2  the report, the config or the history is invalid, unreadable or of another schema
   3  the history URL could not be fetched (a 404 means no history)`;
 
 const SERVE_HELP = `
@@ -305,9 +312,13 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   program
     .command("render")
     .description(
-      "Add a report.json to the benchmarks site: its data, the page shells and the app that draws them."
+      "Add a report.json to the benchmarks site (or, with --config alone, write the site with no new run): its data, the page shells and the app that draws them."
     )
-    .requiredOption("--report <file>", "the run's report.json")
+    .option("--report <file>", "the run's report.json")
+    .option(
+      "--config <perfkit.yaml>",
+      "instead of --report: write the site from the project's perfkit.yaml and the history as it is, with no run added (no runs yet without --history)"
+    )
     .option(
       "--history <file|url>",
       "the published data/runs.json (or a runs.json of the old layout), as a file or an https URL; without it, this is the first run"
@@ -315,7 +326,19 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     .requiredOption("--out <dir>", "the directory to write the site into")
     .addHelpText("after", RENDER_HELP)
     .action(
-      async (options: { report: string; history?: string; out: string }) => {
+      async (options: {
+        report?: string;
+        config?: string;
+        history?: string;
+        out: string;
+      }) => {
+        if ((options.report === undefined) === (options.config === undefined)) {
+          deps.stderr(
+            "perfkit: render needs --report <file> or --config <perfkit.yaml>, not both\n"
+          );
+          exitCode = EXIT_USAGE;
+          return;
+        }
         const result = await renderSite(options);
         if (!result.ok) {
           result.errors.forEach((line) => deps.stderr(`${line}\n`));

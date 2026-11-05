@@ -4,8 +4,10 @@
 import { expect } from "chai";
 import { join } from "node:path";
 import { createDrawRun } from "../../../src/render/app/createDrawRun.js";
-import { loadReport, REPORT_FORMS } from "../../fixtures.js";
-import { loadHistory, RUNS_4 } from "../site.js";
+import { createRenderSite } from "../../../src/render/createRenderSite.js";
+import { NO_RUNS_TEXT } from "../../../src/render/renderEmptyPage.js";
+import { loadReport, REPORT_FORMS, ROUTR_CONFIG } from "../../fixtures.js";
+import { loadHistory, makeDeps, RUNS_4 } from "../site.js";
 import {
   expectedPage,
   openPage,
@@ -124,5 +126,29 @@ describe("the browser app", () => {
     expect(document.querySelector("[role=alert] pre")?.textContent).to.equal(
       !inNode.ok ? inNode.errors.join("\n") : null
     );
+  });
+
+  it("should draw the no-runs page of a site rendered from a config alone", async () => {
+    // Arrange
+    const { deps, written } = makeDeps({}, undefined, realApp);
+    const rendered = await createRenderSite(deps)({
+      config: ROUTR_CONFIG,
+      out: "out"
+    });
+    expect(rendered.ok).to.equal(true);
+
+    // Act
+    const { document, errors } = await openPage(written, "out", "");
+
+    // Assert
+    expect(errors).to.deep.equal([]);
+    expect(document.title).to.equal("Routr benchmarks");
+    expect(document.querySelector("h1")?.textContent).to.equal(
+      "How much SIP traffic Routr handles."
+    );
+    expect(document.querySelector("[data-no-runs]")?.textContent).to.equal(
+      NO_RUNS_TEXT
+    );
+    expect(document.querySelector(".nav .brand")).to.not.equal(null);
   });
 });

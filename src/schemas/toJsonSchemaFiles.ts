@@ -6,6 +6,7 @@ import { liveSchema } from "./live.schema.js";
 import { perfkitConfigSchema } from "./perfkitConfig.schema.js";
 import { reportSchema } from "./report.schema.js";
 import { runsSchema } from "./runs.schema.js";
+import { siteSchema } from "./site.schema.js";
 
 /**
  * The JSON Schema files perfkit ships, by file name under `schemas/`, with
@@ -20,7 +21,8 @@ export function toJsonSchemaFiles(): Record<string, string> {
     }),
     "report-v1.schema.json": z.toJSONSchema(reportSchema),
     "runs-v1.schema.json": z.toJSONSchema(runsSchema),
-    "live-v1.schema.json": z.toJSONSchema(liveSchema)
+    "live-v1.schema.json": z.toJSONSchema(liveSchema),
+    "site-v1.schema.json": z.toJSONSchema(siteSchema)
   };
   return Object.fromEntries(
     Object.entries(files).map(([name, schema]) => [

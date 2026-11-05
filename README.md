@@ -459,8 +459,11 @@ While a run goes on, the benchmarks page shows it live. Every run, published con
 - **ngrok.** With `NGROK_AUTHTOKEN` set, the server is tunnelled through the static domain in
   `live.domain` (or `NGROK_DOMAIN`) with the `@ngrok/ngrok` package, and the public URL is logged.
   Without it there is no tunnel. The tunnel and the server close when the run ends.
-- **The page.** `project.live.url` (default `https://<live.domain>/live.json`) goes into
-  report.json, so the latest page (the site root) knows where to look. It polls every 15
+- **The page.** The live URL (`project.live.url`, else `live.url`, else
+  `https://<live.domain>/live.json`) goes into report.json and into the site's `data/site.json`,
+  so the latest page (the site root) knows where to look, even before the first run is
+  published (`perfkit render --config`, below). It reads `data/site.json` first, then the latest
+  report. It polls every 15
   seconds; while a run is in progress it shows it live, marked preliminary. When the run ends it
   says the report is being published and shows it as soon as `data/runs.json` lists the run.
   With no run in progress the page is the latest report, unchanged. Run pages never go live.
@@ -500,15 +503,31 @@ stopped, 1 for a usage error and 2 when it can't listen (the port is taken).
 
 ```sh
 perfkit render --report <report.json> [--history <data/runs.json|https URL>] --out <dir>
+perfkit render --config <perfkit.yaml> [--history <data/runs.json|https URL>] --out <dir>
 ```
 
 Renders one run's `report.json` into the project's benchmarks site, a static site the caller
 publishes (for example under `/benchmarks` on GitHub Pages). It validates the report first, with
 the same error lines as `perfkit validate`.
 
+With `--config` instead of `--report` it adds no run: it writes the site from the project's
+`perfkit.yaml` (logo and favicon inlined) and the history as it is. Without `--history` that is
+a site with no runs yet: the site root shows the project's title and lead and "No published runs
+yet. When a run is in progress it appears here live.", and goes live as soon as a run starts. Use
+it to publish (or clear) a project's site before its first published run:
+
+```console
+$ npx perfkit render --config perf/perfkit.yaml --out out/benchmarks
+wrote out/benchmarks/app/0.1.12/app.js (perfkit 0.1.12)
+wrote out/benchmarks/data/runs.json (0 runs)
+wrote out/benchmarks/data/site.json (live: https://perfkit.ngrok.app/live.json)
+wrote out/benchmarks/index.html (no runs yet)
+```
+
 | Flag | Meaning |
 | :--- | :--- |
-| `--report <file>` | The run's `report.json`. Required. |
+| `--report <file>` | The run's `report.json`. This or `--config` is required, not both. |
+| `--config <perfkit.yaml>` | Instead of `--report`: write the site from the project's perfkit.yaml with no run added. |
 | `--history <file\|url>` | The published `data/runs.json`, as a file or an `https://` URL. A URL that answers 404 is treated as no history. Without it, this is the first run: the page has no deltas and perfkit prints `perfkit: no history: first run, deltas omitted`. |
 | `--out <dir>` | The directory to write the site into. Required. |
 
@@ -519,6 +538,7 @@ wrote out/benchmarks/app/0.2.0/app.js (perfkit 0.2.0)
 wrote out/benchmarks/data/runs/20261103T141210Z-bd3254a/report.json
 wrote out/benchmarks/runs/20261103T141210Z-bd3254a/report.json
 wrote out/benchmarks/data/runs.json (15 runs)
+wrote out/benchmarks/data/site.json (live: https://perfkit.ngrok.app/live.json)
 wrote out/benchmarks/index.html (latest: 20261103T141210Z-bd3254a)
 wrote out/benchmarks/runs/20261103T141210Z-bd3254a/index.html
 wrote out/benchmarks/runs/20261027T093000Z-36bf8f8/index.html
@@ -532,6 +552,10 @@ files on the same site. The output layout:
   position. A run already listed (same id) is replaced, so rendering twice is safe. Point
   `--history` at the published copy of this file (a `runs.json` of the old layout, at the site
   root, also works).
+- `data/site.json` (`schema: perfkit/site/v1`, JSON Schema in `schemas/site-v1.schema.json`):
+  the project, as report.json carries it: name, repo, site URL, accent, logo and favicon SVGs,
+  title, lead and live URL. Every render rewrites it, from the report or from `--config`; the
+  app draws the no-runs page from it and reads the live URL from it first.
 - `data/runs/<id>/report.json`: this run's report, as read; the app draws the page from it. A
   copy also goes to `runs/<id>/report.json`, where the page's `report.json` link points.
 - `app/<version>/app.js`: this perfkit's browser app, the same renderer `perfkit` has always used,
@@ -552,8 +576,8 @@ compare with, is in [docs/report-page.md](docs/report-page.md).
 | Exit code | Meaning |
 | :--- | :--- |
 | 0 | The site was written. |
-| 1 | Usage error, such as a missing `--out`. |
-| 2 | The report or the history is invalid, unreadable or of another schema. |
+| 1 | Usage error, such as a missing `--out`, or neither or both of `--report` and `--config`. |
+| 2 | The report, the config or the history is invalid, unreadable or of another schema. |
 | 3 | The history URL could not be fetched (any error but a 404). |
 
 ## Development

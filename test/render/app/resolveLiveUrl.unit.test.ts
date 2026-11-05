@@ -19,6 +19,27 @@ describe("resolveLiveUrl", () => {
     );
   });
 
+  it("should take site.json's URL before the report's, and ?live= over both", () => {
+    expect(
+      resolveLiveUrl(
+        PAGE,
+        "https://site.example/live.json",
+        "https://report.example/live.json"
+      )
+    ).to.equal("https://site.example/live.json");
+    expect(
+      resolveLiveUrl(PAGE, null, "https://report.example/live.json")
+    ).to.equal("https://report.example/live.json");
+    expect(
+      resolveLiveUrl(
+        `${PAGE}?live=http://localhost:8787/live.json`,
+        "https://site.example/live.json",
+        "https://report.example/live.json"
+      )
+    ).to.equal("http://localhost:8787/live.json");
+    expect(resolveLiveUrl(PAGE, null, null)).to.equal(null);
+  });
+
   it("should be null without one, or for a URL that is not http or https", () => {
     expect(resolveLiveUrl(PAGE, null)).to.equal(null);
     expect(resolveLiveUrl(`${PAGE}?live=javascript:alert(1)`, null)).to.equal(
