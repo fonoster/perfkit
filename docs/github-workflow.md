@@ -44,6 +44,7 @@ adds that machine's IP to the run's firewall before it logs in, with `PERFKIT_SS
 | :--- | :--- |
 | `DIGITALOCEAN_TOKEN` | The DigitalOcean token, with the scopes in the README. It never reaches a droplet, a log or the report. |
 | `PERFKIT_SSH_KEY` | An ed25519 private key in OpenSSH format, without a passphrase. Every job logs in to the droplets with it, registered in the account as `perfkit-shared`. Make one with `ssh-keygen -t ed25519 -N "" -f perfkit`. |
+| `NGROK_AUTHTOKEN` | Optional. The agent opens an ngrok tunnel from `live.domain` of perfkit.yaml to its live.json server, so the benchmarks page shows the run live (see "Live results" in the README). It goes into the agent container's environment on the load generator and nowhere else: not run.json, a log or the report. Without it the run has no tunnel. |
 
 The workflow takes its secrets only through `secrets:`, so a caller has to name them: `secrets:
 inherit` would hand it every secret of the repository.
@@ -85,6 +86,7 @@ jobs:
     secrets:
       DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
       PERFKIT_SSH_KEY: ${{ secrets.PERFKIT_SSH_KEY }}
+      NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }} # optional: live results
 
   publish:
     needs: run

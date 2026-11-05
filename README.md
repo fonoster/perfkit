@@ -116,7 +116,7 @@ perfkit version.
 
 ```sh
 perfkit run --config <perfkit.yaml> --target-version <tag> [--commit <sha>] [--benchmarks <id,id>]
-            [--out <dir>] [--detach] [--dry-run] [--local]
+            [--out <dir>] [--detach] [--dry-run] [--local] [--live-port <port>]
 ```
 
 Creates the run's infrastructure on DigitalOcean, runs the benchmarks on it, and deletes it at
@@ -146,11 +146,14 @@ digest its tag had when the run started.
 | `--detach` | off | Return once the agent on the load generator has started; `perfkit collect` finishes the run. |
 | `--dry-run` | off | Print the plan and create nothing. Needs no token. |
 | `--local` | off | Run on this machine's Docker instead of DigitalOcean. Needs no token. |
+| `--live-port <port>` | `live.port` of perfkit.yaml, else `8787` | Where live.json is served during the run (see [Live results](#live-results)). |
 
 | Environment | Meaning |
 | :--- | :--- |
 | `DIGITALOCEAN_TOKEN` | Required, except with `--dry-run`. Never printed, never written to a file, `report.json` or a droplet. |
 | `PERFKIT_NAME_PREFIX` | Optional; containers and compose projects are named `<prefix>-<run id>-<what>`, `perfkit` by default. |
+| `NGROK_AUTHTOKEN` | Optional. Opens an ngrok tunnel to the run's live.json (see [Live results](#live-results)). On a DigitalOcean run it goes into the agent container's environment on the load generator only; never into run.json, a log or the report. |
+| `NGROK_DOMAIN` | Optional static ngrok domain when perfkit.yaml has no `live.domain`. |
 | `PERFKIT_SSH_KEY` | Optional ed25519 private key, in OpenSSH format, without a passphrase. When set, the run looks its public key up in the account by fingerprint and reuses it, or registers it as `perfkit-shared`. That key is never deleted, by teardown or by sweep, so parallel runs share it. Without it, the run creates `perfkit-<run id>` for this run only and deletes it at teardown. |
 
 `--dry-run` resolves the digests on Docker Hub and prints the plan:
@@ -440,6 +443,58 @@ The verdict is **failed** when any rule failed and **passed** otherwise. Also re
 part of the verdict: p99 in the first and the last hour after the warm-up, the most open file
 descriptors per process, the most concurrent calls, the registrations and their failures, and,
 with telemetry, each service's p50 and p99 self time (a span's time minus its direct children's).
+## Live results
+
+While a run goes on, the benchmarks page shows it live. Every run, published config or not:
+
+- **live.json.** The agent writes `<run root>/live.json` (`schema: perfkit/live/v1`, see
+  [docs/report-v1.md](docs/report-v1.md#livejson)) every 15 seconds: which benchmark runs, each
+  capacity step as the agent judged it, what held so far, a soak's calls and raw memory per
+  process, and when the run should end. Nothing in it is a verdict.
+- **Served read-only.** `GET /live.json` on `127.0.0.1:<live.port>` (8787 by default), never
+  cached, with CORS for the origin of `project.siteUrl` and for `http://localhost:*`; 503 before
+  the first snapshot, 404 for anything else. On a DigitalOcean run the agent serves it on the load
+  generator; with `--local` the `run` (or `collect`) process serves it on this machine.
+- **ngrok.** With `NGROK_AUTHTOKEN` set, the server is tunnelled through the static domain in
+  `live.domain` (or `NGROK_DOMAIN`) with the `@ngrok/ngrok` package, and the public URL is logged.
+  Without it there is no tunnel. The tunnel and the server close when the run ends.
+- **The page.** `project.live.url` (default `https://<live.domain>/live.json`) goes into
+  report.json, so the latest page (the site root) knows where to look. It polls every 15
+  seconds; while a run is in progress it shows it live, marked preliminary. When the run ends it
+  says the report is being published and shows it as soon as `data/runs.json` lists the run.
+  With no run in progress the page is the latest report, unchanged. Run pages never go live.
+  `?live=<url>` on the page overrides the URL.
+
+### Watch a local run live
+
+From a perfkit checkout (`npm ci && npm run build`); the minimal example takes about 4 minutes:
+
+```sh
+# 1. A site to watch: render any report into a directory (an example works).
+node dist/cli.js render --report examples/reports/passed.json \
+  --history examples/history/runs-14.json --out /tmp/perfkit-site
+# 2. Serve it (leave it running).
+node dist/cli.js serve --site /tmp/perfkit-site --port 8080
+# 3. In another terminal, a short local run; it serves live.json on http://127.0.0.1:8787.
+node dist/cli.js run --local --config examples/minimal/perfkit.yaml --target-version 3.7.3
+# 4. Open the page with the local live URL.
+open "http://localhost:8080/?live=http://localhost:8787/live.json"
+# 5. When the run ends, publish its report; the page switches to it.
+node dist/cli.js render --report .perfkit/<run id>/report.json \
+  --history /tmp/perfkit-site/data/runs.json --out /tmp/perfkit-site
+```
+
+## perfkit serve
+
+```sh
+perfkit serve --site <dir> [--port 8080] [--host 127.0.0.1]
+```
+
+A read-only static server for a directory `perfkit render` wrote, as GitHub Pages serves it,
+with nothing cached: to preview a site, or to watch a `--local` run live (above). It prints
+`serving <dir> at http://127.0.0.1:8080/ (Ctrl-C stops)` and runs until Ctrl-C. It exits 0 when
+stopped, 1 for a usage error and 2 when it can't listen (the port is taken).
+
 ## perfkit render
 
 ```sh
