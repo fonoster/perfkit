@@ -123,6 +123,17 @@ jobs:
           path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
           if-no-files-found: ignore
           overwrite: true
+      - name: Write the run summary
+        if: failure()
+        env:
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          {
+            echo "## perfkit run $RUN_ID"
+            echo
+            echo "The run failed before its report was written; see this job's log."
+            echo "The raw results downloaded so far are in the artifact perfkit-raw-$RUN_ID."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   wait-2:
     name: Wait for the run (next 5 h 50 min)
@@ -160,6 +171,17 @@ jobs:
           path: .perfkit/${{ needs.start.outputs.run-id }}/raw/
           if-no-files-found: ignore
           overwrite: true
+      - name: Write the run summary
+        if: failure()
+        env:
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          {
+            echo "## perfkit run $RUN_ID"
+            echo
+            echo "The run failed before its report was written; see this job's log."
+            echo "The raw results downloaded so far are in the artifact perfkit-raw-$RUN_ID."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   finish:
     name: Collect the results and delete the droplets
@@ -202,10 +224,28 @@ jobs:
           name: perfkit-report-${{ needs.start.outputs.run-id }}
           path: .perfkit/${{ needs.start.outputs.run-id }}/
           if-no-files-found: ignore
+      - name: Write the run summary
+        if: always()
+        env:
+          RUN_ID: ${{ needs.start.outputs.run-id }}
+        run: |
+          report=".perfkit/$RUN_ID/report.json"
+          if [ -f "$report" ]; then
+            npx -y "$PERFKIT" summary --report "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## perfkit run $RUN_ID"
+              echo
+              echo "No report was written; see this job's log."
+              echo "The raw results are in the artifact perfkit-report-$RUN_ID."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
+  # Every job above uploads the raw results it downloaded before it ends, so
+  # this job, which deletes the droplets, always runs after those uploads.
   cleanup:
     name: Delete anything the run left behind
-    needs: [start, finish]
+    needs: [start, wait-1, wait-2, finish]
     if: always() && needs.start.outputs.run-id != ''
     runs-on: ubuntu-latest
     permissions:

@@ -18,6 +18,7 @@ import {
   MAX_FAILED_CHECKS,
   nameOf
 } from "./constants.js";
+import { downloadPartialRaw } from "./downloadPartialRaw.js";
 import { formatResultLine, formatSpan } from "./formatResultLine.js";
 import { runPaths } from "./paths.js";
 import {
@@ -55,7 +56,9 @@ type Ending = "done" | "failed" | "timeout" | "unreachable" | "cancelled";
  * agent's progress lines and downloading each benchmark's raw results as
  * soon as its `done` marker exists. With `wait` it only waits: exit 0 when
  * the run is done, 4 on timeout, 130 on a signal, 3 when the agent failed
- * or the load generator stopped answering; it never deletes. Otherwise,
+ * or the load generator stopped answering; it never deletes. When the agent
+ * failed (or, without `wait`, the run was cancelled) it first downloads the
+ * raw results of the benchmarks that did not finish, as they are. Otherwise,
  * once the run ends it writes report.json, deletes everything and exits 0
  * (every selected benchmark passed) or 1. A signal stops the agent, marks
  * unfinished benchmarks `aborted` (the run was cancelled), and still writes
@@ -188,8 +191,25 @@ export function createCollect(deps: CollectDeps) {
       );
       return EXIT_RUNNING;
     }
+    // Before giving up on a failed run, keep what its benchmarks wrote so
+    // far: the workflow uploads raw/ and then deletes the droplets.
+    const salvage = async () => {
+      const ids = await downloadPartialRaw({
+        remote: deps.remote,
+        root: deps.root,
+        runDir,
+        downloaded
+      });
+      ids.forEach((id) =>
+        deps.stdout(
+          `[${id}] downloaded the partial raw results to ${join(runDir, "raw", id)}\n`
+        )
+      );
+    };
+
     if (input.wait) {
       if (ending === "done") return EXIT_OK;
+      if (ending === "failed") await salvage();
       if (ending === "cancelled") return EXIT_CANCELLED;
       deps.stderr(
         `perfkit: ${ending === "failed" ? current?.failed : LOADGEN_UNRESPONSIVE}; nothing was deleted\n`
@@ -207,6 +227,7 @@ export function createCollect(deps: CollectDeps) {
         .catch(() => undefined);
       await read().catch(() => false);
     }
+    if (ending === "failed" || ending === "cancelled") await salvage();
 
     const finish = async (code: number): Promise<number> => {
       const { summary, failures } = await deps.teardown();

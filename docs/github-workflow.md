@@ -14,12 +14,18 @@ the load on its own, and later jobs only follow it:
 1. `start` runs `perfkit run --detach` and outputs the run id.
 2. `wait-1` and `wait-2` each run `perfkit collect <id> --wait --timeout 5h50m`. Exit 4 (the run
    goes on) lets the next job wait; exit 0 skips the rest of the waiting. Each uploads the raw
-   results so far as the artifact `perfkit-raw-<id>`, overwriting it.
+   results so far as the artifact `perfkit-raw-<id>`, overwriting it. When the agent fails
+   (exit 3), `collect` first downloads the raw results of the unfinished benchmarks as they are,
+   so the upload keeps them.
 3. `finish` downloads that artifact and runs `perfkit collect <id>`: it writes `report.json`,
    deletes the droplets, and uploads `.perfkit/<id>/` as `perfkit-report-<id>`. Exit 1 (a
-   benchmark did not pass) still uploads.
+   benchmark did not pass) still uploads. It then appends `perfkit summary` of the report to the
+   workflow run's summary page: the verdicts, the capacity steps and the soak rules.
 4. `cleanup` always runs `perfkit sweep --run <id>`, so a cancelled or failed workflow leaves
-   nothing billing.
+   nothing billing. It needs every job before it, so it starts only after their uploads.
+
+Where a run failed before its report, the failed job's summary says so and names the artifact
+that holds the raw results.
 
 Every job has `permissions: { contents: read }`. Each job runs on a new machine, so `collect`
 adds that machine's IP to the run's firewall before it logs in, with `PERFKIT_SSH_KEY`.

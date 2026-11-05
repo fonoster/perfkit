@@ -3,7 +3,7 @@
  */
 import { expect } from "chai";
 import { EventEmitter } from "node:events";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import sinon from "sinon";
 import { createNodeAnalyzeDeps } from "../../src/analyze/index.js";
@@ -96,6 +96,37 @@ async function reportOf(dir: string, runId: string) {
   return reportSchema.parse(
     JSON.parse(await readFile(join(dir, runId, "report.json"), "utf8"))
   );
+}
+
+const AGENT_FAILED = "the agent failed: Maximum call stack size exceeded";
+
+/**
+ * The half-done run, after its agent failed in the soak: the soak's raw
+ * directory holds hours of results but no `done` marker.
+ */
+async function agentFailed() {
+  const t = await halfDone();
+  const root = t.setup.hosts.roots.loadgen;
+  await writeRaw(join(root, "raw", "one-soak"), {
+    "sampler-uut.jsonl": '{"t":"2026-11-03T14:20:00Z"}\n',
+    "uac_stat.csv": "StartTime;\n"
+  });
+  await writeFile(
+    join(root, "status.json"),
+    JSON.stringify({
+      benchmarks: {
+        "edgeport-echo": { state: "done" },
+        "one-soak": {
+          state: "running",
+          startedAt: "2026-11-03T14:20:00Z",
+          plannedS: 23400
+        }
+      },
+      done: false,
+      failed: AGENT_FAILED
+    })
+  );
+  return t;
 }
 
 describe("createCollect", () => {
@@ -209,6 +240,89 @@ describe("createCollect", () => {
     // Assert
     expect(code).to.equal(4);
     expect(t.out.at(-1)).to.equal("[one-soak] running, 0s of 6h30m\n");
+    expect(t.teardown.callCount).to.equal(0);
+  });
+
+  it("should download the soak's partial raw results, delete nothing and exit 3 when the agent failed during --wait", async () => {
+    // Arrange
+    const t = await agentFailed();
+
+    // Act
+    const code = await t.collect()({
+      runId: t.runId,
+      wait: true,
+      out: t.setup.out,
+      timeoutMs: null
+    });
+
+    // Assert
+    expect(code).to.equal(3);
+    const raw = join(t.setup.out, t.runId, "raw");
+    expect((await readdir(raw)).sort()).to.deep.equal([
+      "edgeport-echo",
+      "one-soak"
+    ]);
+    expect((await readdir(join(raw, "one-soak"))).sort()).to.deep.equal([
+      "sampler-uut.jsonl",
+      "uac_stat.csv"
+    ]);
+    expect(t.out).to.include(
+      `[one-soak] downloaded the partial raw results to ${join(raw, "one-soak")}\n`
+    );
+    expect(t.err).to.deep.equal([
+      `perfkit: ${AGENT_FAILED}; nothing was deleted\n`
+    ]);
+    expect(t.teardown.callCount).to.equal(0);
+  });
+
+  it("should download the partial raw results before it deletes everything when the agent failed", async () => {
+    // Arrange
+    const t = await agentFailed();
+    const raw = join(t.setup.out, t.runId, "raw");
+    let atTeardown: string[] = [];
+    t.teardown.callsFake(async () => {
+      atTeardown = (await readdir(raw)).sort();
+      return { summary: "deleted 2 droplets", failures: [] };
+    });
+
+    // Act
+    const code = await t.collect()({
+      runId: t.runId,
+      out: t.setup.out,
+      timeoutMs: null
+    });
+
+    // Assert
+    expect(code).to.equal(3);
+    expect(atTeardown).to.deep.equal(["edgeport-echo", "one-soak"]);
+    expect(t.err).to.deep.equal([
+      `perfkit: ${AGENT_FAILED}; no report was written\n`
+    ]);
+    expect(t.teardown.callCount).to.equal(1);
+  });
+
+  it("should still exit 3 when the partial raw results cannot be downloaded", async () => {
+    // Arrange
+    const t = await agentFailed();
+    const download = t.setup.hosts.download;
+    t.setup.hosts.download = async (host, remotePath, localPath) => {
+      if (remotePath.endsWith("/one-soak")) throw new Error("scp failed");
+      return download(host, remotePath, localPath);
+    };
+
+    // Act
+    const code = await t.collect()({
+      runId: t.runId,
+      wait: true,
+      out: t.setup.out,
+      timeoutMs: null
+    });
+
+    // Assert
+    expect(code).to.equal(3);
+    expect(
+      t.out.some((line) => line.includes("downloaded the partial raw"))
+    ).to.equal(false);
     expect(t.teardown.callCount).to.equal(0);
   });
 
