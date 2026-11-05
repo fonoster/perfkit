@@ -7,3 +7,5 @@ schemas/
 examples/
 designs/
 *.md
+# Reports as published on Routr gh-pages, byte for byte
+test/fixtures/published/

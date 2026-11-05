@@ -38,8 +38,20 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener("abort", done, { once: true });
   });
 
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** The built app from dist; from src (tsx), a fresh bundle of src. */
+async function appBundle(): Promise<string> {
+  if (import.meta.url.endsWith(".ts")) {
+    const { bundleApp } = await import("./render/app/bundleApp.js");
+    return bundleApp(version);
+  }
+  return readFile(join(packageRoot, "dist", "app", "app.js"), "utf8");
+}
+
 const code = await runCli(process.argv, {
   version,
+  appBundle,
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
   readFile: (path) => readFile(path, "utf8"),
@@ -68,7 +80,7 @@ const code = await runCli(process.argv, {
     ssh: createSshTools({ run: runProgram }),
     runProgram,
     home: homedir(),
-    packageRoot: join(dirname(fileURLToPath(import.meta.url)), ".."),
+    packageRoot,
     namePrefix: process.env.PERFKIT_NAME_PREFIX || "perfkit",
     runAgent: async ({ root, runId }) => {
       const fs = createNodeAgentFs();

@@ -44,8 +44,10 @@ export type PartialSoak = Extract<
 
 /** What `perfkit render` needs from the outside world, injected. */
 export interface RenderSiteDeps {
-  /** The perfkit version, for the footer. */
+  /** The perfkit version: the app's folder and the footer. */
   version: string;
+  /** The browser app's script, bundled for this version. */
+  appBundle: () => Promise<string>;
   readFile: (path: string) => Promise<string>;
   /** True when the path exists and is a file. */
   isFile: (path: string) => Promise<boolean>;
@@ -58,7 +60,7 @@ export interface RenderSiteDeps {
 /** One file written, as the CLI reports it. */
 export interface WrittenFile {
   path: string;
-  /** `latest: <id>`, `15 runs` */
+  /** `latest: <id>`, `15 runs`, `perfkit <version>` */
   note: string | null;
 }
 

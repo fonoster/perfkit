@@ -6,21 +6,23 @@ import { toFieldErrors } from "../errors/toFieldErrors.js";
 import { withErrorHandlingAndValidation } from "../errors/withErrorHandlingAndValidation.js";
 import {
   reportSchema,
+  type RunEntry,
   type Runs,
   runsSchema,
   SCHEMA_IDS
 } from "../schemas/index.js";
 import { createValidateFile } from "../validate/createValidateFile.js";
 import { parseDocument } from "../validate/parseDocument.js";
+import { SITE_PATHS } from "./app/sitePaths.js";
 import { mergeRuns } from "./mergeRuns.js";
-import { renderRunPage } from "./renderRunPage.js";
+import { renderShell } from "./renderShell.js";
 import {
   type RenderSiteInput,
   renderSiteInputSchema
 } from "./renderSite.schema.js";
 import { toRunEntry } from "./toRunEntry.js";
 import type {
-  PageContext,
+  PageKind,
   RenderSiteDeps,
   RenderSiteResult,
   WrittenFile
@@ -35,9 +37,13 @@ type History =
 /**
  * Creates the function behind `perfkit render`: it validates a report.json,
  * reads the history (a runs.json file or https URL; a 404 is no history),
- * and writes the static site: `runs/<id>/index.html`, `runs/<id>/report.json`,
- * `runs.json` and, when this run is the newest, `index.html`. Older run pages
- * are never touched.
+ * and writes the data-driven site: this perfkit's browser app
+ * (`app/<version>/app.js`), this run's report (`data/runs/<id>/report.json`,
+ * and a copy in `runs/<id>/` for the page's report.json link), the history
+ * (`data/runs.json`), and the shells (`index.html` and one
+ * `runs/<id>/index.html` per run in the history), which load the app. The
+ * app draws each page from the data when it is viewed, so older reports are
+ * never read or rewritten, and a new perfkit redraws every run.
  *
  * @param deps - File system, network and version (injected)
  * @returns A validated function that returns the files written, or the
@@ -77,35 +83,47 @@ export function createRenderSite(deps: RenderSiteDeps) {
 
     const entry = toRunEntry(report);
     const merged = mergeRuns(history.runs, entry, report.project.name);
-    const isLatest = merged.runs[0]?.id === entry.id;
-    const page = (kind: PageContext["page"]) =>
-      renderRunPage({
-        report,
-        runs: merged.runs,
-        current: entry,
-        page: kind,
-        base: kind === "latest" ? "" : "../../",
+    const newest = merged.runs[0] ?? entry;
+    const shell = (run: RunEntry, page: PageKind) =>
+      renderShell({
+        project: merged.project,
+        run,
+        page,
         perfkitVersion: deps.version
       });
+    const at = (path: string) => join(out, ...path.split("/"));
 
-    const runDir = join(out, "runs", report.run.id);
     const files: Array<WrittenFile & { text: string }> = [
-      ...(isLatest
-        ? [
-            {
-              path: join(out, "index.html"),
-              note: `latest: ${report.run.id}`,
-              text: page("latest")
-            }
-          ]
-        : []),
-      { path: join(runDir, "index.html"), note: null, text: page("run") },
-      { path: join(runDir, "report.json"), note: null, text: reportText },
       {
-        path: join(out, "runs.json"),
+        path: at(SITE_PATHS.app(deps.version)),
+        note: `perfkit ${deps.version}`,
+        text: await deps.appBundle()
+      },
+      {
+        path: at(SITE_PATHS.report(report.run.id)),
+        note: null,
+        text: reportText
+      },
+      {
+        path: at(`${SITE_PATHS.runDir(report.run.id)}report.json`),
+        note: null,
+        text: reportText
+      },
+      {
+        path: at(SITE_PATHS.runs),
         note: `${merged.runs.length} run${merged.runs.length === 1 ? "" : "s"}`,
         text: `${JSON.stringify(merged, null, 2)}\n`
-      }
+      },
+      {
+        path: at("index.html"),
+        note: `latest: ${newest.id}`,
+        text: shell(newest, "latest")
+      },
+      ...merged.runs.map((run) => ({
+        path: at(`${SITE_PATHS.runDir(run.id)}index.html`),
+        note: null,
+        text: shell(run, "run")
+      }))
     ];
     await files.reduce(
       (previous, file) =>

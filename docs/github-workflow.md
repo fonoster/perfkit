@@ -107,7 +107,7 @@ jobs:
       - run: npm install -g npm@11
       - run: >-
           npx -y github:fonoster/perfkit#v0.1.0 render --report run/report.json
-          --history pages/benchmarks/runs.json --out pages/benchmarks
+          --history pages/benchmarks/data/runs.json --out pages/benchmarks
       - working-directory: pages
         run: |
           git config user.name "github-actions[bot]"

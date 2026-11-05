@@ -6,8 +6,9 @@ import { join } from "node:path";
 import sinon from "sinon";
 import { ValidationError } from "../../src/errors/ValidationError.js";
 import { createRenderSite } from "../../src/render/createRenderSite.js";
-import { loadReport } from "../fixtures.js";
+import { type Json, loadReport } from "../fixtures.js";
 import {
+  APP_STUB,
   loadHistory,
   makeDeps,
   renderSite,
@@ -47,15 +48,42 @@ describe("perfkit render", () => {
     // Assert
     expect(result.code).to.equal(0);
     expect(result.err).to.equal("");
+    const runIds = loadHistory(RUNS_14).runs.map((run: Json) => run.id);
     expect(result.out).to.equal(
       [
-        `wrote ${join("out/benchmarks", "index.html")} (latest: ${PASSED_ID})`,
-        `wrote ${join("out/benchmarks/runs", PASSED_ID, "index.html")}`,
+        `wrote ${join("out/benchmarks/app/9.8.7/app.js")} (perfkit 9.8.7)`,
+        `wrote ${join("out/benchmarks/data/runs", PASSED_ID, "report.json")}`,
         `wrote ${join("out/benchmarks/runs", PASSED_ID, "report.json")}`,
-        `wrote ${join("out/benchmarks", "runs.json")} (14 runs)`,
+        `wrote ${join("out/benchmarks/data/runs.json")} (14 runs)`,
+        `wrote ${join("out/benchmarks", "index.html")} (latest: ${PASSED_ID})`,
+        ...runIds.map(
+          (id: string) =>
+            `wrote ${join("out/benchmarks/runs", id, "index.html")}`
+        ),
         ""
       ].join("\n")
     );
+  });
+
+  it("should write the app, this run's data and a shell per run, and never another report", async () => {
+    // Act
+    const site = await renderSite(loadReport("failed"), loadHistory(RUNS_4));
+
+    // Assert
+    const reports = [...site.written.keys()].filter((path) =>
+      path.endsWith("report.json")
+    );
+    expect(reports).to.deep.equal([
+      join("out", "data", "runs", FAILED_ID, "report.json"),
+      join("out", "runs", FAILED_ID, "report.json")
+    ]);
+    expect(site.written.get(join("out", "app", "9.8.7", "app.js"))).to.equal(
+      APP_STUB
+    );
+    const shells = [...site.written.keys()].filter((path) =>
+      path.endsWith("index.html")
+    );
+    expect(shells).to.have.length(1 + site.runs().runs.length);
   });
 
   it("should print the warning and render without deltas when there is no history", async () => {
@@ -242,17 +270,20 @@ describe("perfkit render", () => {
     });
   });
 
-  it("should not write index.html for a report older than the newest in history", async () => {
+  it("should point index.html at the newest run for a report older than the newest in history", async () => {
     // Act
     const site = await renderSite(loadReport("failed"), loadHistory(RUNS_4));
 
     // Assert
-    expect([...site.written.keys()]).to.deep.equal([
-      join("out", "runs", FAILED_ID, "index.html"),
-      join("out", "runs", FAILED_ID, "report.json"),
-      join("out", "runs.json")
-    ]);
-    expect(site.result.ok && site.result.written[0]?.note).to.equal(null);
+    const latest = site.result.ok
+      ? site.result.written.find(
+          ({ path }) => path === join("out", "index.html")
+        )
+      : undefined;
+    expect(latest?.note).to.equal(`latest: ${PASSED_ID}`);
+    expect(site.written.get(join("out", "index.html"))).to.contain(
+      "<title>Routr benchmarks · v2.31.5</title>"
+    );
   });
 
   it("should list a report rendered twice once", async () => {
@@ -289,6 +320,9 @@ describe("perfkit render", () => {
     await createRenderSite(deps)({ report: "r.json", out: "o" });
 
     // Assert
+    expect(
+      written.get(join("o", "data", "runs", PASSED_ID, "report.json"))
+    ).to.equal(text);
     expect(written.get(join("o", "runs", PASSED_ID, "report.json"))).to.equal(
       text
     );

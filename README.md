@@ -443,7 +443,7 @@ with telemetry, each service's p50 and p99 self time (a span's time minus its di
 ## perfkit render
 
 ```sh
-perfkit render --report <report.json> [--history <runs.json|https URL>] --out <dir>
+perfkit render --report <report.json> [--history <data/runs.json|https URL>] --out <dir>
 ```
 
 Renders one run's `report.json` into the project's benchmarks site, a static site the caller
@@ -453,30 +453,45 @@ the same error lines as `perfkit validate`.
 | Flag | Meaning |
 | :--- | :--- |
 | `--report <file>` | The run's `report.json`. Required. |
-| `--history <file\|url>` | The published `runs.json`, as a file or an `https://` URL. A URL that answers 404 is treated as no history. Without it, this is the first run: the page has no deltas and perfkit prints `perfkit: no history: first run, deltas omitted`. |
+| `--history <file\|url>` | The published `data/runs.json`, as a file or an `https://` URL. A URL that answers 404 is treated as no history. Without it, this is the first run: the page has no deltas and perfkit prints `perfkit: no history: first run, deltas omitted`. |
 | `--out <dir>` | The directory to write the site into. Required. |
 
 ```console
 $ npx perfkit render --report .perfkit/20261103T141210Z-bd3254a/report.json \
-    --history pages/benchmarks/runs.json --out out/benchmarks
+    --history https://fonoster.github.io/routr/benchmarks/data/runs.json --out out/benchmarks
+wrote out/benchmarks/app/0.2.0/app.js (perfkit 0.2.0)
+wrote out/benchmarks/data/runs/20261103T141210Z-bd3254a/report.json
+wrote out/benchmarks/runs/20261103T141210Z-bd3254a/report.json
+wrote out/benchmarks/data/runs.json (15 runs)
 wrote out/benchmarks/index.html (latest: 20261103T141210Z-bd3254a)
 wrote out/benchmarks/runs/20261103T141210Z-bd3254a/index.html
-wrote out/benchmarks/runs/20261103T141210Z-bd3254a/report.json
-wrote out/benchmarks/runs.json (15 runs)
+wrote out/benchmarks/runs/20261027T093000Z-36bf8f8/index.html
+...
 ```
 
-The output layout:
+The site is data-driven: the pages are drawn in the browser, when they are viewed, from JSON
+files on the same site. The output layout:
 
-- `index.html`: the latest run, the one with the newest `startedAt`. It is written only when
-  this run is the newest, so rendering an old report doesn't replace it.
-- `runs/<id>/index.html` and `runs/<id>/report.json`: this run's own page and report.
-- `runs.json`: the history, newest first, with this run inserted at its `startedAt` position. A
-  run already listed (same id) is replaced, so rendering twice is safe.
+- `data/runs.json`: the history, newest first, with this run inserted at its `startedAt`
+  position. A run already listed (same id) is replaced, so rendering twice is safe. Point
+  `--history` at the published copy of this file (a `runs.json` of the old layout, at the site
+  root, also works).
+- `data/runs/<id>/report.json`: this run's report, as read; the app draws the page from it. A
+  copy also goes to `runs/<id>/report.json`, where the page's `report.json` link points.
+- `app/<version>/app.js`: this perfkit's browser app, the same renderer `perfkit` has always used,
+  bundled. It validates the data with the same schemas as `perfkit validate`.
+- `index.html` and `runs/<id>/index.html`, one per run in the history: small shells with the
+  run's title, description and Open Graph tags (for link previews) that load the app. The app
+  reads the run from the URL: the site root is the latest run, `runs/<id>/` is that run. Where a
+  report is missing from `data/runs/<id>/`, it reads `runs/<id>/report.json`, so a site of the
+  old layout keeps working.
 
-Only this run's files are written: older run pages are never rewritten, so each stays as it was
-published. Each page is self-contained HTML (inline CSS, charts as inline SVG, fonts from Google
-Fonts, one small inline script for the run picker). What each section shows, and how the deltas
-pick the run they compare with, is in [docs/report-page.md](docs/report-page.md).
+Older reports are never read or rewritten: publishing a run adds its data files and replaces
+the shells and the history. Each shell pins this perfkit's app, so publishing with a newer
+perfkit redraws every run with the newer renderer; older `app/<version>/` folders can stay. Publish
+`--out` without deleting what is already on the site (for example with `keep_files` on
+peaceiris/actions-gh-pages). What each section shows, and how the deltas pick the run they
+compare with, is in [docs/report-page.md](docs/report-page.md).
 
 | Exit code | Meaning |
 | :--- | :--- |

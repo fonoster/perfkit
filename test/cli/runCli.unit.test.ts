@@ -38,6 +38,7 @@ async function run(args: string[], memory: Record<string, Json> = {}) {
     typeof value === "string" ? value : JSON.stringify(value);
   const code = await runCli(["node", "perfkit", ...args], {
     version: "9.8.7",
+    appBundle: async () => "",
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
     readFile: async (path) =>

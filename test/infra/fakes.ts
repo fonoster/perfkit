@@ -356,6 +356,7 @@ export async function perfkit(
   const err: string[] = [];
   const deps: CliDeps = {
     version: "9.8.7",
+    appBundle: async () => "",
     stdout: (text) => out.push(text),
     stderr: (text) => err.push(text),
     readFile: async (path) =>

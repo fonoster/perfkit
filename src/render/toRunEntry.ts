@@ -6,7 +6,7 @@ import type { Report, RunBenchmark, RunEntry } from "../schemas/index.js";
 /**
  * The runs.json entry for a report: the run's identity, its verdict counts
  * and the headline numbers the history table and the deltas read. Its page
- * lives at `runs/<id>/`, relative to runs.json.
+ * lives at `runs/<id>/`, relative to the site root.
  */
 export function toRunEntry(report: Report): RunEntry {
   return {
