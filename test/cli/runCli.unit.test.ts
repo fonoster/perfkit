@@ -298,3 +298,45 @@ describe("perfkit validate", () => {
     });
   });
 });
+
+describe("perfkit summary", () => {
+  it("should print the report as Markdown with exit 0", async () => {
+    // Act
+    const result = await run(["summary", "--report", "report.json"], {
+      "report.json": loadReport("failed")
+    });
+
+    // Assert
+    expect(result.code).to.equal(0);
+    expect(result.err).to.equal("");
+    expect(result.out).to.match(/^## perfkit run 20261020T100005Z-c0b54ab\n/);
+    expect(result.out).to.include(
+      "### EdgePort + Echo (`edgeport-echo`): failed"
+    );
+  });
+
+  it("should print the errors of an invalid report and exit 2", async () => {
+    // Arrange
+    const report = loadReport("failed");
+    report.verdict.passed = 3;
+
+    // Act
+    const result = await run(["summary", "--report", "report.json"], {
+      "report.json": report
+    });
+
+    // Assert
+    expect(result.code).to.equal(2);
+    expect(result.out).to.equal("");
+    expect(result.err).to.match(/^report\.json: verdict/);
+  });
+
+  it("should exit 1 without --report", async () => {
+    // Act
+    const result = await run(["summary"]);
+
+    // Assert
+    expect(result.code).to.equal(1);
+    expect(result.err).to.include("--report <file>");
+  });
+});

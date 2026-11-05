@@ -301,6 +301,10 @@ $ echo $?
 - **Cancelled.** SIGINT or SIGTERM stops the agent, marks every unfinished benchmark `aborted`
   (`the run was cancelled`), writes the report if one benchmark finished, deletes everything and
   exits 130. During `--wait` it only exits 130.
+- **The agent fails.** Before it exits 3, `collect` downloads the raw results of every benchmark
+  that did not finish, as they are, into `<out>/<run id>/raw/<id>/` (without a `done` marker) and
+  prints `[<id>] downloaded the partial raw results to <dir>`, so hours of a soak survive the
+  teardown. It does the same for a cancelled run before it deletes everything.
 
 | Exit code | Meaning |
 | :--- | :--- |
@@ -313,6 +317,26 @@ $ echo $?
 
 For GitHub, [docs/github-workflow.md](docs/github-workflow.md) has the reusable workflow that
 splits a run across jobs.
+
+## perfkit summary
+
+```sh
+perfkit summary --report <report.json>
+```
+
+Prints a report as GitHub Markdown, for a workflow's run summary: the run id, the target version
+and commit, the overall verdict, and per benchmark its verdict (with its reason when it is
+inconclusive, aborted or not run). A capacity benchmark adds its capacity limit, where the ramp
+stopped and a table of the steps (offered and placed rate, p99, failed %, ok or why it stopped); a
+soak adds its rules against their limits (memory growth per process, failed calls, restarts) and
+p99 in the first and the last hour. The reusable workflow appends it to `$GITHUB_STEP_SUMMARY`:
+
+```sh
+perfkit summary --report .perfkit/<run id>/report.json >> "$GITHUB_STEP_SUMMARY"
+```
+
+It exits 0 when it printed the summary, 1 for a usage error, and 2 when the report is invalid,
+unreadable or of another schema.
 
 ## perfkit sweep
 
