@@ -60,15 +60,17 @@ export function createDockerEngine(socketPath: string): EngineRequest {
 export function demuxLogs(buffer: Buffer): { stdout: string; stderr: string } {
   const out: Buffer[] = [];
   const err: Buffer[] = [];
-  const read = (offset: number): void => {
-    if (offset + 8 > buffer.length) return;
+  // A loop, not recursion: a long command output arrives as tens of
+  // thousands of frames, past the call stack's depth.
+  let offset = 0;
+  while (offset + 8 <= buffer.length) {
     const stream = buffer[offset];
     const size = buffer.readUInt32BE(offset + 4);
-    const frame = buffer.subarray(offset + 8, offset + 8 + size);
-    (stream === 2 ? err : out).push(frame);
-    read(offset + 8 + size);
-  };
-  read(0);
+    (stream === 2 ? err : out).push(
+      buffer.subarray(offset + 8, offset + 8 + size)
+    );
+    offset += 8 + size;
+  }
   return {
     stdout: Buffer.concat(out).toString("utf8"),
     stderr: Buffer.concat(err).toString("utf8")
