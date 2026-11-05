@@ -29,6 +29,10 @@
           "type": "string",
           "minLength": 1
         },
+        "favicon": {
+          "type": "string",
+          "minLength": 1
+        },
         "title": {
           "type": "string",
           "minLength": 1

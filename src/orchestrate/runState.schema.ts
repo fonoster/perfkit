@@ -50,6 +50,7 @@ export const runStateSchema = z.strictObject({
   plan: planSchema,
   config: perfkitConfigSchema,
   logoSvg: z.string().optional(),
+  faviconSvg: z.string().optional(),
   hosts: z.strictObject({
     uutIp: z.ipv4(),
     loadgenIp: z.ipv4(),

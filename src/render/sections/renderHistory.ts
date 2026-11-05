@@ -104,7 +104,7 @@ export function renderHistory(ctx: PageContext): string {
 <div>
 <p class="eyebrow">HISTORY</p>
 <h2 class="section-title" id="previous-runs">Previous runs</h2>
-<p class="section-sub">Every run keeps its own page and report.json. Open one to see it exactly as it was.</p>
+<p class="section-sub">Every run keeps its own page and report.json.</p>
 </div>
 ${trend}
 </div>

@@ -10,6 +10,12 @@ describe("toReportProject", () => {
     const project = toReportProject(runState());
     expect(project.name).to.equal("Routr");
     expect(project).to.not.have.property("live");
+    expect(project).to.not.have.property("faviconSvg");
+  });
+
+  it("should carry the favicon SVG when the run has one", () => {
+    const state = { ...runState(), faviconSvg: "<svg/>" };
+    expect(toReportProject(state).faviconSvg).to.equal("<svg/>");
   });
 
   it("should take project.live.url first, then live.url, then the live domain's live.json", () => {

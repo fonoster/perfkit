@@ -193,5 +193,15 @@ describe("renderLivePage", () => {
     );
     expect($("style").text()).to.contain("prefers-reduced-motion");
     expect($("[data-picker]")).to.have.length(1);
+    expect($('link[rel="icon"]')).to.have.length(0);
+  });
+
+  it("should link the project's favicon in the head", () => {
+    const live = sampleLive(NOW - 8_000);
+    live.project = { ...live.project, faviconSvg: "<svg/>" };
+    const $ = cheerio.load(renderLivePage(ctx({ live })));
+    expect($('head link[rel="icon"]').attr("href")).to.equal(
+      `data:image/svg+xml,${encodeURIComponent("<svg/>")}`
+    );
   });
 });

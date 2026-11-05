@@ -32,6 +32,7 @@ Rules for the whole file:
 | `project.siteUrl` | URL | yes | | Where the report pages are published, like `https://routr.io/benchmarks`. |
 | `project.accent` | string | yes | | 6-digit hex color, like `#5FCFCE`: the page's accent color. |
 | `project.logo` | path | no | none | An `.svg` file. Without it, the nav shows `project.name`. |
+| `project.favicon` | path | no | none | An `.svg` file: the browser tab's icon on every page. Read when the run starts and inlined into report.json and live.json. Without it, the pages have no icon. |
 | `project.title` | string | yes | | The page's headline. |
 | `project.lead` | string | yes | | The paragraph under the headline. |
 | `project.live.url` | URL | no | `live.url`, else `https://<live.domain>/live.json` | Where the benchmarks page polls a run in progress. Goes into report.json, so the published page knows it. |
@@ -124,7 +125,7 @@ the other kind rejects them.
 | `load.unit` | string | no | `calls` | What one SIPp call is, as a lowercase plural noun shown on the page (`calls`, `messages`). Copied into each report.json benchmark as `unit`. |
 | `load.rate.start` | number (calls/s) | *capacity*: yes | | The first step's rate. |
 | `load.rate.step` | number (calls/s) | *capacity*: yes | | Added at each step. |
-| `load.rate.every` | duration | *capacity*: yes | | How long each step lasts. |
+| `load.rate.every` | duration | *capacity*: yes | | How long each step lasts. A multiple of 10 s, because SIPp reports its counters every 10 s; `15s` is rejected (`expected a multiple of 10 s (SIPp reports every 10 s); got 15s`). |
 | `load.rate.max` | number (calls/s) | *capacity*: yes | | The ramp stops here. Reaching it without breaking a rule makes the limit a lower bound. |
 | `load.rate.cps` | number (calls/s) | *soak*: yes | | The fixed rate. Keep it well below saturation: a soak looks for leaks, not limits. |
 | `telemetry` | object | no | `{ otlp: false }` | |
@@ -156,6 +157,7 @@ project:
   siteUrl: https://routr.io/benchmarks
   accent: "#5FCFCE"               # 6-digit hex; the page's accent color
   logo: logo.svg                  # optional SVG; without it the nav shows project.name
+  favicon: favicon.svg            # optional SVG; the browser tab's icon
   title: How much SIP traffic Routr handles.
   lead: We run these tests after significant changes to the code, on dedicated DigitalOcean servers, one for Routr and one for the load generator. The EdgePort runs alone to find its limit; the whole stack runs for hours to catch leaks.
 infra:

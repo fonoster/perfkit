@@ -30,6 +30,12 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
           "utf8"
         )
       : undefined;
+    const faviconSvg = config.project.favicon
+      ? await readFile(
+          join(dirname(options.configPath), config.project.favicon),
+          "utf8"
+        )
+      : undefined;
     await createStartRun({
       remote: createSshRemote({
         ssh: infra.ssh,
@@ -47,6 +53,7 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
       plan,
       config,
       ...(logoSvg ? { logoSvg: logoSvg.trim() } : {}),
+      ...(faviconSvg ? { faviconSvg: faviconSvg.trim() } : {}),
       hosts: {
         uutIp: run.uut.privateIp,
         loadgenIp: run.loadgen.privateIp,

@@ -20,7 +20,8 @@ history and picker list every run published since, and a newer perfkit redraws i
 
 ## Nav and header
 
-The nav has the project's logo, the run picker and a link to the run's `report.json`. The picker
+With `project.faviconSvg` in report.json, every page and shell links it as the tab's icon. The
+nav has the project's logo, the run picker and a link to the run's `report.json`. The picker
 lists up to 8 runs, newest first, each a link to its page; "See all" jumps to Previous runs.
 
 The header has the verdict pill, `N of M benchmarks passed`, followed by how many were not run,

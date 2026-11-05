@@ -83,4 +83,38 @@ describe("renderShell", () => {
       '<b>"Routr"</b> benchmarks · v2.31.5'
     );
   });
+
+  it("should link the favicon as a URL-encoded SVG data URI", () => {
+    // Act
+    const $ = load(
+      renderShell({
+        project: "Routr",
+        run,
+        page: "run",
+        perfkitVersion: "1.2.3",
+        faviconSvg: '<svg viewBox="0 0 1 1"/>'
+      })
+    );
+
+    // Assert
+    expect($('link[rel="icon"]').attr("type")).to.equal("image/svg+xml");
+    expect($('link[rel="icon"]').attr("href")).to.equal(
+      `data:image/svg+xml,${encodeURIComponent('<svg viewBox="0 0 1 1"/>')}`
+    );
+  });
+
+  it("should have no icon link without a favicon", () => {
+    // Act
+    const $ = load(
+      renderShell({
+        project: "Routr",
+        run,
+        page: "run",
+        perfkitVersion: "1.2.3"
+      })
+    );
+
+    // Assert
+    expect($('link[rel="icon"]')).to.have.length(0);
+  });
 });

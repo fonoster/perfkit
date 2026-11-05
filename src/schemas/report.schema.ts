@@ -46,6 +46,10 @@ export const reportProjectSchema = z.strictObject({
     .string()
     .regex(/<svg[\s>]/, { error: "expected inline SVG markup" })
     .optional(),
+  faviconSvg: z
+    .string()
+    .regex(/<svg[\s>]/, { error: "expected inline SVG markup" })
+    .optional(),
   title: nonEmptyString,
   lead: nonEmptyString,
   live: projectLiveSchema.optional()

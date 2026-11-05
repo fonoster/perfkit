@@ -21,6 +21,7 @@ export function toReportProject(state: RunState): Report["project"] {
     siteUrl: project.siteUrl,
     accent: project.accent,
     ...(state.logoSvg ? { logoSvg: state.logoSvg } : {}),
+    ...(state.faviconSvg ? { faviconSvg: state.faviconSvg } : {}),
     title: project.title,
     lead: project.lead,
     ...(liveUrl ? { live: { url: liveUrl } } : {})

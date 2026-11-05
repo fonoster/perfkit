@@ -2,8 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import type { z } from "zod/v4";
-
-const UNIT_S = { s: 1, m: 60, h: 3600 } as const;
+import { durationSeconds } from "./durationSeconds.js";
 
 /**
  * Adds an issue at `warmup` when a capacity benchmark's warm-up is not
@@ -15,8 +14,8 @@ export function checkWarmupShorterThanStep(
   benchmark: { warmup: string; load: { rate: { every: string } } },
   ctx: z.core.$RefinementCtx
 ): void {
-  const warmupS = seconds(benchmark.warmup);
-  const everyS = seconds(benchmark.load.rate.every);
+  const warmupS = durationSeconds(benchmark.warmup);
+  const everyS = durationSeconds(benchmark.load.rate.every);
   if (warmupS > 0 && warmupS >= everyS) {
     ctx.addIssue({
       code: "custom",
@@ -25,9 +24,4 @@ export function checkWarmupShorterThanStep(
       input: benchmark.warmup
     });
   }
-}
-
-function seconds(duration: string): number {
-  const match = /^(\d+)([smh])$/.exec(duration);
-  return match ? Number(match[1]) * UNIT_S[match[2] as keyof typeof UNIT_S] : 0;
 }

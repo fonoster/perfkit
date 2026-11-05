@@ -5,6 +5,7 @@ import type { RunEntry } from "../schemas/index.js";
 import { SITE_PATHS } from "./app/sitePaths.js";
 import { formatDate, formatTime, shortCommit } from "./format.js";
 import { esc } from "./html.js";
+import { renderFaviconLink } from "./renderFaviconLink.js";
 import type { PageKind } from "./types.js";
 import { summaryText } from "./verdicts.js";
 
@@ -21,8 +22,10 @@ export function renderShell(params: {
   run: RunEntry;
   page: PageKind;
   perfkitVersion: string;
+  /** The project's favicon, from the report being rendered. */
+  faviconSvg?: string;
 }): string {
-  const { project, run, page, perfkitVersion } = params;
+  const { project, run, page, perfkitVersion, faviconSvg } = params;
   const base = page === "latest" ? "" : "../../";
   const title = `${project} benchmarks · v${run.version}`;
   const description = `${summaryText(run.verdict)}. ${project} v${run.version}, run of ${formatDate(run.startedAt)} ${formatTime(run.startedAt)} UTC, commit ${shortCommit(run.commit)}.`;
@@ -36,7 +39,7 @@ export function renderShell(params: {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="${esc(description)}">
+${renderFaviconLink(faviconSvg)}<meta name="description" content="${esc(description)}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(`${project} benchmarks`)}">
 <meta property="og:title" content="${esc(title)}">

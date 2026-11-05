@@ -15,6 +15,7 @@ export const startRunInputSchema = z.strictObject({
     plan: true,
     config: true,
     logoSvg: true,
+    faviconSvg: true,
     hosts: true,
     live: true
   }).shape,
