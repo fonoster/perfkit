@@ -52,6 +52,57 @@ async function withCallees(setup: Awaited<ReturnType<typeof doSetup>>) {
   );
 }
 
+/**
+ * A copy of the Routr example with one more benchmark, `one-capacity`: a
+ * capacity ramp of calls to 200 registered callees.
+ */
+async function routrWithCapacityCallees(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "perfkit-routr-"));
+  await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
+  const rows = Array.from(
+    { length: 200 },
+    (_, i) => `callee${i};pass${i};[authentication username=callee${i} password=pass${i}]`
+  );
+  await writeFile(
+    join(dir, "one-soak", "callees.csv"),
+    ["SEQUENTIAL", ...rows, ""].join("\n")
+  );
+  const yaml = await readFile(ROUTR_CONFIG, "utf8");
+  await writeFile(
+    join(dir, "perfkit.yaml"),
+    `${yaml}  - id: one-capacity
+    kind: capacity
+    title: RoutrOne
+    narrative: { what: Calls between registered agents., why: A deployment saturates at its first component., how: SIPp ramps calls. }
+    uut:
+      compose: one-soak/compose.yaml
+      processes:
+        - { name: one, match: "dist/runner" }
+    load:
+      tool: sipp
+      transport: udp
+      register: { scenario: one-soak/uac_register.xml, users: one-soak/callees.csv, expires: 300 }
+      uas: { scenario: one-soak/uas_answer.xml }
+      uac: { scenario: edgeport-echo/uac_message.xml }
+      rate: { start: 50, step: 50, every: 60s, max: 200 }
+    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1 }
+`
+  );
+  return join(dir, "perfkit.yaml");
+}
+
+/** A passing capacity ramp, and the register role's counts file. */
+function capacityWithRegistrations(registered: number) {
+  return {
+    ...capacityRaw(PASSING_STEPS),
+    "uac_register_8_counts.csv": [
+      "CurrentTime;ElapsedTime;0_REGISTER_Sent;2_401_Recv;3_REGISTER_Sent;5_200_Recv;",
+      `2026-11-03T14:12:10Z;00:00:10:000000;200;200;200;${registered};`,
+      ""
+    ].join("\n")
+  };
+}
+
 const agentCommands = (setup: Awaited<ReturnType<typeof doSetup>>) =>
   setup.hosts.commands.filter(({ by }) => by === "agent");
 
@@ -299,6 +350,92 @@ describe("createAgent", () => {
       reason
     );
     expect(await readFile(join(raw, "done"), "utf8")).to.match(/^\d{4}-/);
+    const state = runStateSchema.parse(
+      JSON.parse(
+        await readFile(join(setup.hosts.roots.loadgen, "run.json"), "utf8")
+      )
+    );
+    const result = await analyzeBenchmark(
+      createNodeAnalyzeDeps(),
+      state.plan.benchmarks[0]!,
+      raw,
+      null,
+      "SIPp 3.7.3, UDP"
+    );
+    expect(result).to.include({ verdict: "aborted", reason });
+  });
+
+  it("should start the capacity uac only after every callee has registered", async () => {
+    // Arrange
+    const config = await routrWithCapacityCallees();
+    const setup = await detached(
+      [
+        "run",
+        "--config",
+        config,
+        "--target-version",
+        "2.31.5",
+        "--benchmarks",
+        "one-capacity"
+      ],
+      capacityWithRegistrations(200),
+      true
+    );
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    const register = commands.findIndex((c) => c.includes("-sipp-register "));
+    const uac = commands.findIndex((c) => c.includes("-sipp-uac "));
+    expect(register).to.be.greaterThan(-1);
+    expect(uac).to.be.greaterThan(register);
+    expect(commands[uac]).to.include("-recv_timeout 10000");
+    expect(commands[register]).not.to.include("-recv_timeout");
+    const root = setup.hosts.roots.loadgen;
+    expect(await readFile(join(root, "progress.log"), "utf8")).to.include(
+      "[one-capacity] 200 callees registered"
+    );
+    const meta = JSON.parse(
+      await readFile(join(root, "raw", "one-capacity", "meta.json"), "utf8")
+    );
+    expect(meta).to.include({ kind: "capacity", registerUsers: 200 });
+  });
+
+  it("should abort a capacity benchmark without starting its uac when the callees don't all register in time", async () => {
+    // Arrange
+    const config = await routrWithCapacityCallees();
+    const setup = await detached(
+      [
+        "run",
+        "--config",
+        config,
+        "--target-version",
+        "2.31.5",
+        "--benchmarks",
+        "one-capacity"
+      ],
+      capacityWithRegistrations(150),
+      true
+    );
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    expect(
+      commands.some((c) => c.includes("-sipp-uac ") && c.includes("run -d"))
+    ).to.equal(false);
+    const raw = join(setup.hosts.roots.loadgen, "raw", "one-capacity");
+    const reason =
+      "only 150 of 200 callees registered within 70 s, so no call was placed";
+    expect((await readFile(join(raw, "aborted"), "utf8")).trim()).to.equal(
+      reason
+    );
     const state = runStateSchema.parse(
       JSON.parse(
         await readFile(join(setup.hosts.roots.loadgen, "run.json"), "utf8")

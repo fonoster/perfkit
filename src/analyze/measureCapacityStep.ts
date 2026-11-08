@@ -26,6 +26,8 @@ export const MIN_ACHIEVED_RATIO = 0.95;
 export const MAX_ACHIEVED_RATIO = 1.05;
 /** The load generator's SIPp process, as the sampler names it. */
 export const SIPP_UAC_PROCESS = "sipp-uac";
+/** The callee SIPp processes, checked against the same 80%. */
+export const SIPP_CALLEE_PROCESSES = ["sipp-register", "sipp-uas"] as const;
 
 export interface StepInput {
   offeredCps: number;
@@ -47,8 +49,8 @@ export interface MeasuredStep {
 /**
  * Measures one capacity step. Latency counts the calls whose request was
  * sent in the step; attempts, failures and retransmissions come from the
- * stat rows in it. A step is invalid when SIPp used more than 80% of one
- * core, placed less than 95% or more than 105% of the offered rate, or the load generator's
+ * stat rows in it. A step is invalid when the uac SIPp, or a callee SIPp
+ * (register, uas), used more than 80% of one core, placed less than 95% or more than 105% of the offered rate, or the load generator's
  * UDP drops rose.
  */
 export function measureCapacityStep(input: StepInput): MeasuredStep {
@@ -75,19 +77,25 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
       0
     )
   );
+  const callee = SIPP_CALLEE_PROCESSES.map((name) => ({
+    name,
+    cpuPct: cpuPctOver(processSamples(input.samples, "loadgen", name), window)
+  })).find(({ cpuPct }) => cpuPct > MAX_SIPP_CPU_PCT);
   const loadgenUdpDrops = udpDropsOver(input.udp, "loadgen", window);
   const uutUdpDrops = udpDropsOver(input.udp, "uut", window);
   const rate = `${formatNumber(offeredCps)} ${input.unit}/s`;
   const invalidReason =
     sippCpuPct > MAX_SIPP_CPU_PCT
       ? `load generator saturated at ${rate} (SIPp at ${Math.round(sippCpuPct)}% of one core)`
-      : achievedCps < offeredCps * MIN_ACHIEVED_RATIO
-        ? `load generator fell behind at ${rate} (placed ${formatNumber(achievedCps)} ${input.unit}/s, ${Math.round((achievedCps / offeredCps) * 100)}% of offered)`
-        : achievedCps > offeredCps * MAX_ACHIEVED_RATIO
-          ? `load generator sent a burst at ${rate} (placed ${formatNumber(achievedCps)} ${input.unit}/s, ${Math.round((achievedCps / offeredCps) * 100)}% of offered)`
-          : loadgenUdpDrops > 0
-            ? `load generator dropped UDP packets at ${rate} (${formatNumber(loadgenUdpDrops)} buffer errors)`
-            : null;
+      : callee
+        ? `load generator saturated at ${rate} (${callee.name} at ${Math.round(callee.cpuPct)}% of one core)`
+        : achievedCps < offeredCps * MIN_ACHIEVED_RATIO
+          ? `load generator fell behind at ${rate} (placed ${formatNumber(achievedCps)} ${input.unit}/s, ${Math.round((achievedCps / offeredCps) * 100)}% of offered)`
+          : achievedCps > offeredCps * MAX_ACHIEVED_RATIO
+            ? `load generator sent a burst at ${rate} (placed ${formatNumber(achievedCps)} ${input.unit}/s, ${Math.round((achievedCps / offeredCps) * 100)}% of offered)`
+            : loadgenUdpDrops > 0
+              ? `load generator dropped UDP packets at ${rate} (${formatNumber(loadgenUdpDrops)} buffer errors)`
+              : null;
   return {
     failedPct,
     invalidReason,
