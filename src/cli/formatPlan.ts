@@ -37,6 +37,11 @@ export function formatPlan(
       ...field("hosts", [
         "this machine's Docker, for the server under test and the load generator"
       ]),
+      ...(plan.cluster
+        ? field("cluster", [
+            `kind ${plan.cluster.name}, one node, MetalLB; deleted at the end`
+          ])
+        : []),
       ...field(
         "images",
         plan.images.map(
@@ -58,6 +63,11 @@ export function formatPlan(
     ...field("loadgen", [
       `${plan.loadgen.size.padEnd(sizeWidth)}${plan.loadgen.image}`
     ]),
+    ...(plan.cluster
+      ? field("cluster", [
+          `${plan.cluster.name}: DOKS ${plan.cluster.version}, ${plan.cluster.nodes} × ${plan.cluster.size}, in the VPC; deleted with its load balancers and volumes`
+        ])
+      : []),
     ...field("firewall", [
       `from the VPC: all ports (tcp/udp) and icmp; SSH (22) from ${plan.sshSource.replace(/\/32$/, "")} and the VPC only`
     ]),

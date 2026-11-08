@@ -5,6 +5,7 @@ import type { CapacityBenchmarkResult } from "../../schemas/index.js";
 import { renderLatencyChart } from "../charts/renderLatencyChart.js";
 import { formatDuration, formatMs, formatPct, formatRate } from "../format.js";
 import { esc } from "../html.js";
+import { targetLabel } from "../targetLabel.js";
 import { icon } from "../icons.js";
 import type {
   MeasuredCapacity,
@@ -35,7 +36,13 @@ export function renderCapacitySection(
     benchmark.verdict === "not-run"
       ? ""
       : `${formatDuration(benchmark.durationS)} · ${benchmark.tool}`;
-  const head = sectionHead(benchmark, index, meta);
+  const head = sectionHead(
+    benchmark,
+    index,
+    meta,
+    "",
+    targetLabel(benchmark, ctx.report.run.infra)
+  );
 
   const body = bodyFor(benchmark, ctx);
 

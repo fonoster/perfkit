@@ -65,9 +65,20 @@ export function createAgent(deps: AgentDeps) {
       done: false,
       failed: null
     };
-    const save = async () => {
-      await deps.fs.writeFile(`${paths.status}.tmp`, JSON.stringify(status));
-      await deps.fs.rename(`${paths.status}.tmp`, paths.status);
+    // Soaks run at the same time, so saves are queued: one temporary file
+    // at a time.
+    let saving = Promise.resolve();
+    const save = () => {
+      saving = saving
+        .catch(() => undefined)
+        .then(async () => {
+          await deps.fs.writeFile(
+            `${paths.status}.tmp`,
+            JSON.stringify(status)
+          );
+          await deps.fs.rename(`${paths.status}.tmp`, paths.status);
+        });
+      return saving;
     };
     await save();
     const runBenchmark = createRunBenchmark(deps, state);

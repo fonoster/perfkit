@@ -17,8 +17,14 @@ export const startRunInputSchema = z.strictObject({
     logoSvg: true,
     faviconSvg: true,
     hosts: true,
-    live: true
+    live: true,
+    cluster: true
   }).shape,
+  /**
+   * The cluster's kubeconfig, a credential: it goes to the load generator's
+   * keys directory only, never into run.json or a log.
+   */
+  kubeconfig: z.string().min(1).optional(),
   /** The directory of perfkit.yaml. */
   projectDir: z.string().min(1, { error: "expected the project directory" }),
   /** The run's --out, left out of the project copy. */

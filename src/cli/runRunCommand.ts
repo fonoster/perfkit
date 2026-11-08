@@ -20,11 +20,15 @@ import {
   type RunOutcome,
   type SshIdentity
 } from "../infra/index.js";
+import { buildHelmEnv } from "../orchestrate/buildHelmEnv.js";
 import { createLocalRemote } from "../orchestrate/createLocalRemote.js";
+import { renderHelmValues } from "../orchestrate/renderHelmValues.js";
+import type { RunClusterState } from "../orchestrate/runState.schema.js";
 import { createStartRun } from "../orchestrate/createStartRun.js";
 import type { PerfkitConfig } from "../schemas/index.js";
 import { createLoadConfig } from "../validate/createLoadConfig.js";
 import { checkComposeFiles } from "./checkComposeFiles.js";
+import { createKindCluster } from "./createKindCluster.js";
 import { createStartExecutor } from "./createStartExecutor.js";
 import { localTeardown } from "./localTeardown.js";
 import { runCollectCommand } from "./runCollectCommand.js";
@@ -245,7 +249,9 @@ function describeCommand(options: RunCommandOptions): string {
 
 /**
  * `run --local`: the same run on this machine's Docker, with no droplets,
- * no token and no SSH; its root is `~/.perfkit/runs/<id>/root`.
+ * no token and no SSH; its root is `~/.perfkit/runs/<id>/root`. A helm
+ * benchmark runs on a kind cluster, `perfkit-<run id>`, with MetalLB for
+ * its load balancers; it is deleted with the run's containers.
  */
 async function runLocal(
   input: {
@@ -277,7 +283,61 @@ async function runLocal(
         )
       ).trim()
     : undefined;
+  const projectDir = dirname(resolve(options.config));
+  let cluster: { state: RunClusterState; kubeconfig: string } | undefined;
   try {
+    if (plan.cluster) {
+      const charts = await Promise.all(
+        plan.benchmarks.flatMap((benchmark) =>
+          "helm" in benchmark.uut
+            ? [
+                (async () => {
+                  const helm = (
+                    benchmark.uut as { helm: { chart: string; values: string } }
+                  ).helm;
+                  const values = join(dirs.dir, `values-${benchmark.id}.yaml`);
+                  await writeFile(
+                    values,
+                    renderHelmValues(
+                      await deps.readFile(join(projectDir, helm.values)),
+                      buildHelmEnv({ plan }, null),
+                      helm.values
+                    )
+                  );
+                  return { chart: resolve(projectDir, helm.chart), values };
+                })()
+              ]
+            : []
+        )
+      );
+      deps.stdout(`creating the kind cluster ${plan.cluster.name}\n`);
+      const kind = await createKindCluster({
+        run: infra.runProgram,
+        writeFile: (path, text) => writeFile(path, text, { mode: 0o600 })
+      })({
+        name: plan.cluster.name,
+        runId: plan.runId,
+        dir: dirs.dir,
+        charts,
+        images: plan.images.map(({ name, tag }) => `${name}:${tag}`)
+      });
+      kind.loaded.forEach((image) =>
+        deps.stdout(`loaded ${image} into ${plan.cluster!.name}\n`)
+      );
+      cluster = {
+        kubeconfig: kind.kubeconfig,
+        state: {
+          provider: "kind",
+          name: plan.cluster.name,
+          size: "local",
+          nodes: 1,
+          version: kind.version,
+          network: "kind",
+          sippIps: kind.sippIps,
+          fixedIps: true
+        }
+      };
+    }
     await createStartRun({
       remote: createLocalRemote({ run: infra.runProgram }),
       packageRoot: infra.packageRoot
@@ -297,9 +357,12 @@ async function runLocal(
         loadgenIp: "127.0.0.1",
         vpcCidr: "127.0.0.0/8"
       },
-      projectDir: dirname(resolve(options.config)),
+      projectDir,
       out: options.out,
-      live: input.live
+      live: input.live,
+      ...(cluster
+        ? { cluster: cluster.state, kubeconfig: cluster.kubeconfig }
+        : {})
     });
   } catch (err) {
     deps.stderr(`perfkit: ${messageOf(err)}\n`);

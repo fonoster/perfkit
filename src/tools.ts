@@ -45,3 +45,7 @@ export const METRICS_SERVER_CHART = {
   name: "metrics-server",
   version: "3.12.2"
 } as const;
+
+/** MetalLB, the load balancer of a --local run's kind cluster (L2 mode). */
+export const METALLB_MANIFEST =
+  "https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml";

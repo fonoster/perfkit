@@ -168,8 +168,11 @@ export async function runCollectCommand(
       }
       const kinds = [...new Set((swept?.others ?? []).map(({ kind }) => kind))];
       const droplets = swept?.droplets.length ?? 0;
+      const clusters = (swept?.clusters ?? []).map(
+        ({ name }) => `Kubernetes cluster ${name}`
+      );
       return {
-        summary: `deleted ${[`${droplets} droplet${droplets === 1 ? "" : "s"}`, ...kinds].join(", ")}`,
+        summary: `deleted ${[`${droplets} droplet${droplets === 1 ? "" : "s"}`, ...clusters, ...kinds].join(", ")}`,
         failures
       };
     }
