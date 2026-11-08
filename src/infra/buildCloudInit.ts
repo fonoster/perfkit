@@ -8,7 +8,8 @@ const OPEN_FILES = 1048576;
 
 /**
  * The cloud-init user data of a perfkit droplet: Docker Engine with the
- * compose plugin, 25 MiB socket buffers, and 1048576 open files for logins,
+ * compose plugin, 25 MiB socket buffers, the ephemeral ports 1024 to 65535
+ * with TIME_WAIT reuse for TCP load, and 1048576 open files for logins,
  * services and containers. It holds no secrets. `authorizedKeys`, given for
  * the UUT only, are appended to root's authorized_keys.
  */
@@ -20,7 +21,14 @@ export function buildCloudInit(input: { authorizedKeys: string[] }): string {
     "net.core.wmem_default"
   ]
     .map((key) => `${key} = ${BUFFER_BYTES}\n`)
-    .join("");
+    .join("")
+    .concat(
+      // Over TCP (-t tn) every call opens a connection to one address, and
+      // a closed one waits 60 s in TIME_WAIT: the default ~28k ephemeral
+      // ports would run out near 470 calls/s.
+      "net.ipv4.ip_local_port_range = 1024 65535\n",
+      "net.ipv4.tcp_tw_reuse = 1\n"
+    );
   const limits = ["*", "root"]
     .flatMap((who) => [
       `${who} soft nofile ${OPEN_FILES}\n`,
