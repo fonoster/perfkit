@@ -103,6 +103,30 @@
           ],
           "additionalProperties": false
         },
+        "cluster": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "version": {
+              "default": "latest",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "size",
+            "nodes"
+          ],
+          "additionalProperties": false
+        },
         "maxLifetime": {
           "default": "9h",
           "type": "string",
@@ -217,44 +241,122 @@
                 "pattern": "^\\d+[smh]$"
               },
               "uut": {
-                "type": "object",
-                "properties": {
-                  "compose": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "setup": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "processes": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "match": {
-                          "type": "string",
-                          "minLength": 1
-                        }
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "compose": {
+                        "type": "string",
+                        "minLength": 1
                       },
-                      "required": [
-                        "name",
-                        "match"
-                      ],
-                      "additionalProperties": false
-                    }
+                      "setup": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "processes": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "match": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "match"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "compose",
+                      "processes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "helm": {
+                        "type": "object",
+                        "properties": {
+                          "chart": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "values": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "entry": {
+                            "type": "object",
+                            "properties": {
+                              "service": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+                              },
+                              "port": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              }
+                            },
+                            "required": [
+                              "service",
+                              "port"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "setup": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "pods": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "selector": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "selector"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "chart",
+                          "values",
+                          "entry",
+                          "pods"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "helm"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "compose",
-                  "processes"
-                ],
-                "additionalProperties": false
+                ]
               },
               "load": {
                 "type": "object",
@@ -264,8 +366,12 @@
                     "const": "sipp"
                   },
                   "transport": {
+                    "default": "udp",
                     "type": "string",
-                    "const": "udp"
+                    "enum": [
+                      "udp",
+                      "tcp"
+                    ]
                   },
                   "port": {
                     "default": 5060,
@@ -300,6 +406,43 @@
                     "type": "string",
                     "pattern": "^[a-z]+$"
                   },
+                  "register": {
+                    "type": "object",
+                    "properties": {
+                      "scenario": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "users": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "expires": {
+                        "default": 300,
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "scenario",
+                      "users"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "uas": {
+                    "type": "object",
+                    "properties": {
+                      "scenario": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "scenario"
+                    ],
+                    "additionalProperties": false
+                  },
                   "rate": {
                     "type": "object",
                     "properties": {
@@ -331,7 +474,6 @@
                 },
                 "required": [
                   "tool",
-                  "transport",
                   "uac",
                   "rate"
                 ],
@@ -437,44 +579,122 @@
                 "pattern": "^\\d+[smh]$"
               },
               "uut": {
-                "type": "object",
-                "properties": {
-                  "compose": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "setup": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "processes": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "match": {
-                          "type": "string",
-                          "minLength": 1
-                        }
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "compose": {
+                        "type": "string",
+                        "minLength": 1
                       },
-                      "required": [
-                        "name",
-                        "match"
-                      ],
-                      "additionalProperties": false
-                    }
+                      "setup": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "processes": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "match": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "match"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "compose",
+                      "processes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "helm": {
+                        "type": "object",
+                        "properties": {
+                          "chart": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "values": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "entry": {
+                            "type": "object",
+                            "properties": {
+                              "service": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+                              },
+                              "port": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              }
+                            },
+                            "required": [
+                              "service",
+                              "port"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "setup": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "pods": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "selector": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "selector"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "chart",
+                          "values",
+                          "entry",
+                          "pods"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "helm"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "compose",
-                  "processes"
-                ],
-                "additionalProperties": false
+                ]
               },
               "load": {
                 "type": "object",
@@ -484,8 +704,12 @@
                     "const": "sipp"
                   },
                   "transport": {
+                    "default": "udp",
                     "type": "string",
-                    "const": "udp"
+                    "enum": [
+                      "udp",
+                      "tcp"
+                    ]
                   },
                   "port": {
                     "default": 5060,
@@ -558,22 +782,49 @@
                     "additionalProperties": false
                   },
                   "rate": {
-                    "type": "object",
-                    "properties": {
-                      "cps": {
-                        "type": "number",
-                        "exclusiveMinimum": 0
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "cps": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "cps"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "fromCapacity": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]+$"
+                          },
+                          "fraction": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 1
+                          },
+                          "fallbackCps": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "fromCapacity",
+                          "fraction",
+                          "fallbackCps"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "cps"
-                    ],
-                    "additionalProperties": false
+                    ]
                   }
                 },
                 "required": [
                   "tool",
-                  "transport",
                   "uac",
                   "rate"
                 ],

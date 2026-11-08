@@ -31,3 +31,17 @@ export const SAMPLER_IMAGE =
 /** The OpenTelemetry Collector (contrib) for soaks with telemetry.otlp. */
 export const OTELCOL_IMAGE =
   "otel/opentelemetry-collector-contrib:0.112.0@sha256:2203eea06554f892c765d6eff8069cdf64ae8d4516526d03cab4a70e82775495";
+
+/**
+ * kubectl 1.33, helm 3.18, jq and bash, for a run's Kubernetes cluster:
+ * installing the chart, sampling the Metrics API and the setup script.
+ */
+export const KUBE_TOOLS_IMAGE =
+  "alpine/k8s:1.33.4@sha256:b0523f0a244ddc4c8e055aa335c040d3d78b3ead5528f4544395f7f9f69c7b68";
+
+/** metrics-server, which DOKS and kind lack, from its chart repository. */
+export const METRICS_SERVER_CHART = {
+  repo: "https://kubernetes-sigs.github.io/metrics-server/",
+  name: "metrics-server",
+  version: "3.12.2"
+} as const;

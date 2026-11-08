@@ -1,19 +1,34 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 import { capacityStepWindow } from "../analyze/capacityStepWindow.js";
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import type { Now, Sleep } from "../infra/index.js";
-import type { BenchmarkConfig } from "../schemas/index.js";
 import {
+  type BenchmarkConfig,
+  type ComposeUutConfig,
+  type HelmUutConfig,
+  isHelmUut,
+  targetOf
+} from "../schemas/index.js";
+import type { RateSource } from "../analyze/rawResults.schema.js";
+import {
+  METRICS_SERVER_CHART,
   NODE_IMAGE,
   OTELCOL_IMAGE,
   SAMPLER_IMAGE,
   SIPP_BINARY,
   SIPP_IMAGE
 } from "../tools.js";
+import { arePodsReady } from "./arePodsReady.js";
 import { buildComposeEnv } from "./buildComposeEnv.js";
+import { buildHelmEnv } from "./buildHelmEnv.js";
+import { buildKubeSamplerSpec } from "./buildKubeSamplerSpec.js";
+import { entryAddressOf } from "./entryAddressOf.js";
+import { kubeCommand } from "./kubeCommand.js";
+import { renderHelmValues } from "./renderHelmValues.js";
+import { toKubeSamplerLines } from "./toKubeSamplerLines.js";
 import { countRegistered } from "./countRegistered.js";
 import {
   buildSippRoles,
@@ -30,14 +45,20 @@ import {
 } from "./composeCommands.js";
 import {
   CHECK_INTERVAL_MS,
+  CLUSTER_UNRESPONSIVE,
+  ENTRY_TIMEOUT_MS,
   HEALTH_POLL_MS,
+  HELM_RELEASE,
   HEALTH_TIMEOUT_MS,
   MAX_FAILED_CHECKS,
   nameOf,
   REGISTER_GRACE_MS,
   REGISTER_POLL_MS,
   REGISTER_RATE,
+  SIPP_LANES,
   SIPP_START_TIMEOUT_MS,
+  SIPP_TCP_NOFILE,
+  type SippRole,
   STEP_GRACE_MS,
   UUT_UNRESPONSIVE
 } from "./constants.js";
@@ -51,7 +72,7 @@ import { evaluateCapacityStep } from "./evaluateCapacityStep.js";
 import { runPaths } from "./paths.js";
 import type { RunState } from "./runState.schema.js";
 import { buildOtelcolConfig, buildSamplerSpec } from "./sampler.js";
-import { writeFileCommand } from "./shellQuote.js";
+import { shellJoin, shellQuote, writeFileCommand } from "./shellQuote.js";
 import type { LiveRecorder } from "../live/types.js";
 import type { AgentFs, Host, HostShell } from "./types.js";
 
@@ -68,16 +89,25 @@ export interface AgentDeps {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
+/** What the agent decided for a soak with `rate.fromCapacity`. */
+export interface BenchmarkRate {
+  cps: number;
+  rateSource: RateSource;
+}
+
 /**
- * Creates `runBenchmark(benchmark)`, one benchmark on the agent: compose up
- * on the UUT and wait until it is running and healthy (5 minutes, else an
- * AgentFailure), the setup script once, the samplers, the collector for
- * telemetry, then the SIPp roles. A capacity ramp is evaluated step by step
- * and SIPp is stopped at the first step that breaks a rule or is invalid,
- * or after the last step. A soak runs for warmup + duration. The UUT is
- * checked every 30 s; three failed checks in a row abort the benchmark with
- * the series collected so far. It ends with the raw results in #2's layout,
- * compose down and the `done` marker.
+ * Creates `runBenchmark(benchmark)`, one benchmark on the agent. On the
+ * server: compose up on the UUT and wait until it is running and healthy (5
+ * minutes, else an AgentFailure) and the setup script once. On the cluster:
+ * metrics-server, the chart with its values, the entry Service's address,
+ * one `helm upgrade` with PERFKIT_ENTRY_IP resolved, every pod Ready and
+ * the setup script. Then the samplers, the collector for telemetry, then
+ * the SIPp roles. A capacity ramp is evaluated step by step and SIPp is
+ * stopped at the first step that breaks a rule or is invalid, or after the
+ * last step. A soak runs for warmup + duration. The UUT (or the cluster's
+ * API) is checked every 30 s; three failed checks in a row abort the
+ * benchmark with the series collected so far. It ends with the raw results
+ * in #2's layout, compose down (helm uninstall) and the `done` marker.
  *
  * @param deps - Host shell, file system and clock (injected)
  */
@@ -87,58 +117,104 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   const run = async (host: Host, command: string, timeoutMs?: number) =>
     deps.shell(host, command, { timeoutMs });
   const sharedFs = state.mode === "local";
+  const kube = (
+    script: string,
+    timeoutMs?: number,
+    options?: Parameters<typeof kubeCommand>[2]
+  ) => run("loadgen", kubeCommand(state, script, options), timeoutMs);
 
-  return async (benchmark: BenchmarkConfig): Promise<void> => {
+  return async (
+    benchmark: BenchmarkConfig,
+    rate?: BenchmarkRate
+  ): Promise<void> => {
     const rawDir = paths.rawOf(benchmark.id);
-    const target: ComposeTarget = {
-      projectDir: paths.project,
-      file: benchmark.uut.compose,
-      name: name(benchmark.id),
-      env: buildComposeEnv(state, benchmark)
-    };
+    const onCluster = targetOf(benchmark) === "cluster";
+    const cluster = state.cluster;
+    if (onCluster && !cluster) {
+      throw new AgentFailure(
+        `${benchmark.id} has uut.helm, but the run has no Kubernetes cluster`
+      );
+    }
+    const helm = isHelmUut(benchmark.uut) ? benchmark.uut.helm : null;
+    const target: ComposeTarget | null = isHelmUut(benchmark.uut)
+      ? null
+      : {
+          projectDir: paths.project,
+          file: benchmark.uut.compose,
+          name: name(benchmark.id),
+          env: buildComposeEnv(state, benchmark)
+        };
+    const lane = SIPP_LANES[targetOf(benchmark)];
     const containers = {
       samplerUut: name(`${benchmark.id}-sampler-uut`),
       samplerLoadgen: name(`${benchmark.id}-sampler-loadgen`),
       otelcol: name(`${benchmark.id}-otelcol`),
       sipp: (role: string) => name(`${benchmark.id}-sipp-${role}`)
     };
+    const allRoles: SippRole[] = ["uac", "register", "uas"];
     const projectFile = (file: string) =>
       deps.fs.readFile(`${paths.project}/${file}`);
-    const registerUsers =
-      benchmark.kind === "soak" && benchmark.load.register
-        ? countUserRows(await projectFile(benchmark.load.register.users))
-        : 0;
-    const roles = buildSippRoles({
-      benchmark,
-      uutIp: state.hosts.uutIp,
-      loadgenIp: state.hosts.loadgenIp,
-      registerUsers
-    });
+    const registerUsers = benchmark.load.register
+      ? countUserRows(await projectFile(benchmark.load.register.users))
+      : 0;
+    const buildRoles = (entry: { ip: string; port: number } | null) =>
+      buildSippRoles({
+        benchmark,
+        uutIp: state.hosts.uutIp,
+        loadgenIp: cluster && onCluster ? cluster.sippIps.uac : state.hosts.loadgenIp,
+        registerUsers,
+        ...(entry ? { target: entry } : {}),
+        ...(rate ? { cps: rate.cps } : {}),
+        ...(cluster && onCluster && cluster.fixedIps
+          ? { bindIps: cluster.sippIps }
+          : {})
+      });
+    // Fails early, before anything starts, when the rate is missing.
+    if (!onCluster) buildRoles(null);
 
     await deps.fs.mkdir(rawDir);
-    if (!sharedFs) await run("uut", `mkdir -p ${rawDir}`);
+    if (!sharedFs && !onCluster) await run("uut", `mkdir -p ${rawDir}`);
+
+    const uutDown = async () => {
+      if (target) {
+        await run("uut", composeCommand(target, ["down", "--remove-orphans"]));
+        return;
+      }
+      await kube(
+        `helm uninstall ${HELM_RELEASE} -n ${shellQuote(benchmark.id)} --wait --timeout 5m >/dev/null 2>&1; kubectl delete namespace ${shellQuote(benchmark.id)} --wait=true --timeout=5m >/dev/null 2>&1; true`,
+        12 * 60 * 1000
+      );
+    };
+    const removeUutSampler = () =>
+      onCluster
+        ? run("loadgen", removeContainersCommand([containers.samplerUut]))
+        : run("uut", removeContainersCommand([containers.samplerUut]));
 
     const cleanup = async () => {
       await run(
         "loadgen",
         removeContainersCommand([
-          ...roles.map(({ role }) => containers.sipp(role)),
+          ...allRoles.map((role) => containers.sipp(role)),
           containers.otelcol,
           containers.samplerLoadgen
         ])
       );
-      await run("uut", removeContainersCommand([containers.samplerUut]));
-      await run("uut", composeCommand(target, ["down", "--remove-orphans"]));
+      await removeUutSampler();
+      await uutDown();
     };
 
     try {
-      await startUut(benchmark, target, projectFile);
-      await startSamplers(benchmark, rawDir, containers);
+      const entry = target
+        ? (await startUut(benchmark, target, projectFile), null)
+        : await startCluster(benchmark, helm as HelmUutConfig["helm"], projectFile);
+      const roles = buildRoles(entry);
+      if (rate) deps.live?.rate?.(benchmark.id, rate.cps);
+      await startSamplers(benchmark, rawDir, containers, lane.prefix);
       if (benchmark.telemetry.otlp) {
         await startCollector(rawDir, containers.otelcol);
       }
       const started = await startSipp(
-        benchmark.id,
+        benchmark,
         roles,
         rawDir,
         containers.sipp,
@@ -168,8 +244,12 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         "loadgen",
         removeContainersCommand([containers.samplerLoadgen])
       );
-      await run("uut", removeContainersCommand([containers.samplerUut]));
-      await collectUutFiles(rawDir);
+      await removeUutSampler();
+      if (onCluster) {
+        await convertKubeSamples(rawDir);
+      } else {
+        await collectUutFiles(rawDir);
+      }
       await mergeHostFiles(rawDir);
       const spans = `${rawDir}/spans.jsonl`;
       if (benchmark.telemetry.otlp && !(await deps.fs.exists(spans))) {
@@ -182,13 +262,14 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         startedMs,
         endedMs,
         monitored.steps,
-        registerUsers
+        registerUsers,
+        rate
       );
       if (monitored.aborted) {
         await deps.fs.writeFile(`${rawDir}/aborted`, `${monitored.aborted}\n`);
         await deps.log(`[${benchmark.id}] aborted: ${monitored.aborted}`);
       }
-      await run("uut", composeCommand(target, ["down", "--remove-orphans"]));
+      await uutDown();
       await deps.fs.writeFile(`${rawDir}/done`, `${iso(deps.now())}\n`);
     } catch (err) {
       await cleanup();
@@ -196,14 +277,167 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     }
   };
 
+  /**
+   * Installs a helm benchmark's chart on the cluster as release `perfkit`
+   * in the namespace named after the benchmark and returns where SIPp
+   * sends: the entry Service's load balancer (DigitalOcean) or the kind
+   * node's NodePort.
+   */
+  async function startCluster(
+    benchmark: BenchmarkConfig,
+    helm: HelmUutConfig["helm"],
+    projectFile: (file: string) => Promise<string>
+  ): Promise<{ ip: string; port: number }> {
+    const ns = benchmark.id;
+    const nodeIp = state.cluster?.nodeIp ?? null;
+    const must = async (what: string, script: string, timeoutMs: number) => {
+      const out = await kube(script, timeoutMs);
+      if (out.code !== 0) {
+        throw new AgentFailure(
+          `${what} for ${benchmark.id}: ${lastLine(out.stderr || out.stdout, `exit ${out.code}`)}`
+        );
+      }
+      return out.stdout;
+    };
+    const poll = async <T>(
+      deadline: number,
+      read: () => Promise<T | null>,
+      timedOut: () => string
+    ): Promise<T> => {
+      const value = await read();
+      if (value !== null) return value;
+      if (deps.now() >= deadline) throw new AgentFailure(timedOut());
+      await deps.sleep(HEALTH_POLL_MS);
+      return poll(deadline, read, timedOut);
+    };
+
+    await must(
+      "could not install metrics-server",
+      shellJoin([
+        "helm",
+        "upgrade",
+        "--install",
+        METRICS_SERVER_CHART.name,
+        METRICS_SERVER_CHART.name,
+        "--repo",
+        METRICS_SERVER_CHART.repo,
+        "--version",
+        METRICS_SERVER_CHART.version,
+        "-n",
+        "kube-system",
+        "--set",
+        "args={--kubelet-insecure-tls}",
+        "--wait",
+        "--timeout",
+        "5m"
+      ]),
+      10 * 60 * 1000
+    );
+
+    const valuesText = await projectFile(helm.values);
+    const valuesFile = paths.valuesOf(benchmark.id);
+    const writeValues = async (entryIp: string | null) => {
+      let text: string;
+      try {
+        text = renderHelmValues(
+          valuesText,
+          buildHelmEnv(state, entryIp),
+          helm.values
+        );
+      } catch (err) {
+        throw new AgentFailure(
+          `${benchmark.id}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      await deps.fs.mkdir(dirname(valuesFile));
+      await deps.fs.writeFile(valuesFile, text);
+    };
+    const upgrade = (extra: string[]) =>
+      shellJoin([
+        "helm",
+        "upgrade",
+        "--install",
+        HELM_RELEASE,
+        paths.chartOf(benchmark.id),
+        "-n",
+        ns,
+        "--create-namespace",
+        "-f",
+        valuesFile,
+        ...extra
+      ]);
+
+    await writeValues(null);
+    await must("helm install failed", upgrade(["--timeout", "15m"]), 20 * 60 * 1000);
+    const entry = await poll(
+      deps.now() + ENTRY_TIMEOUT_MS,
+      async () => {
+        const out = await kube(
+          shellJoin([
+            "kubectl",
+            "get",
+            "service",
+            helm.entry.service,
+            "-n",
+            ns,
+            "-o",
+            "json"
+          ]),
+          60 * 1000
+        );
+        return out.code === 0
+          ? entryAddressOf(out.stdout, helm.entry.port, nodeIp)
+          : null;
+      },
+      () =>
+        `the entry Service ${helm.entry.service} of ${benchmark.id} had no ${nodeIp === null ? "load balancer address" : `NodePort for port ${helm.entry.port}`} within 10 minutes`
+    );
+    await deps.log(
+      `[${benchmark.id}] entry ${helm.entry.service} at ${entry.ip}:${entry.port}`
+    );
+    await writeValues(entry.ip);
+    await must(
+      "helm upgrade failed",
+      upgrade(["--wait", "--timeout", "15m"]),
+      20 * 60 * 1000
+    );
+    await poll(
+      deps.now() + HEALTH_TIMEOUT_MS,
+      async () => {
+        const out = await kube(
+          shellJoin(["kubectl", "get", "pods", "-n", ns, "-o", "json"]),
+          60 * 1000
+        );
+        return out.code === 0 && arePodsReady(out.stdout).ready ? true : null;
+      },
+      () =>
+        `the pods of ${benchmark.id} were not all Ready within 5 minutes`
+    );
+
+    if (helm.setup) {
+      const users = [benchmark.load.register?.users, benchmark.load.uac.users]
+        .filter((file): file is string => file !== undefined);
+      const setup = await kube(
+        shellJoin(["bash", helm.setup, ns, ...users]),
+        15 * 60 * 1000,
+        { workdir: paths.project, env: buildHelmEnv(state, entry.ip) }
+      );
+      if (setup.code !== 0) {
+        throw new AgentFailure(
+          `the setup script ${helm.setup} exited ${setup.code}: ${lastLine(setup.stderr || setup.stdout, "no output")}`
+        );
+      }
+    }
+    return entry;
+  }
+
   async function startUut(
     benchmark: BenchmarkConfig,
     target: ComposeTarget,
     projectFile: (file: string) => Promise<string>
   ) {
-    const expected = countComposeServices(
-      await projectFile(benchmark.uut.compose)
-    );
+    const uut = benchmark.uut as ComposeUutConfig;
+    const expected = countComposeServices(await projectFile(uut.compose));
     const up = await run(
       "uut",
       composeCommand(target, ["up", "-d"]),
@@ -231,7 +465,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       return wait();
     };
     await wait();
-    if (benchmark.uut.setup) {
+    if (uut.setup) {
       const setup = await run(
         "loadgen",
         dockerRunCommand({
@@ -241,13 +475,13 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           volumes: [`${paths.project}:${SIPP_PROJECT_DIR}`],
           workdir: SIPP_PROJECT_DIR,
           env: target.env,
-          command: ["node", benchmark.uut.setup]
+          command: ["node", uut.setup]
         }),
         15 * 60 * 1000
       );
       if (setup.code !== 0) {
         throw new AgentFailure(
-          `the setup script ${benchmark.uut.setup} exited ${setup.code}: ${lastLine(setup.stderr || setup.stdout, "no output")}`
+          `the setup script ${uut.setup} exited ${setup.code}: ${lastLine(setup.stderr || setup.stdout, "no output")}`
         );
       }
     }
@@ -256,7 +490,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   async function startSamplers(
     benchmark: BenchmarkConfig,
     rawDir: string,
-    containers: { samplerUut: string; samplerLoadgen: string }
+    containers: { samplerUut: string; samplerLoadgen: string },
+    prefix: string
   ) {
     const start = async (host: Host, container: string, spec: string) => {
       const specFile = `${rawDir}/sampler-${host}.spec`;
@@ -284,15 +519,33 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         );
       }
     };
-    await start(
-      "uut",
-      containers.samplerUut,
-      buildSamplerSpec("uut", benchmark.uut.processes)
-    );
+    if (isHelmUut(benchmark.uut)) {
+      const specFile = `${rawDir}/sampler-kube.spec`;
+      await deps.fs.writeFile(
+        specFile,
+        buildKubeSamplerSpec(benchmark.uut.helm.pods)
+      );
+      const out = await kube(
+        shellJoin(["sh", paths.kubeSampler, specFile, rawDir, benchmark.id]),
+        undefined,
+        { name: containers.samplerUut }
+      );
+      if (out.code !== 0) {
+        throw new AgentFailure(
+          `could not start the sampler of the Kubernetes cluster: ${lastLine(out.stderr, `exit ${out.code}`)}`
+        );
+      }
+    } else {
+      await start(
+        "uut",
+        containers.samplerUut,
+        buildSamplerSpec("uut", benchmark.uut.processes)
+      );
+    }
     await start(
       "loadgen",
       containers.samplerLoadgen,
-      buildSamplerSpec("loadgen", [])
+      buildSamplerSpec("loadgen", [], prefix)
     );
   }
 
@@ -326,12 +579,16 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
    * starts and the benchmark is aborted with how many did.
    */
   async function startSipp(
-    benchmarkId: string,
+    benchmark: BenchmarkConfig,
     roles: SippRoleSpec[],
     rawDir: string,
     container: (role: string) => string,
     registerUsers: number
   ): Promise<{ startedMs: number; aborted: string | null }> {
+    const benchmarkId = benchmark.id;
+    const cluster = targetOf(benchmark) === "cluster" ? state.cluster : undefined;
+    const nofile =
+      benchmark.load.transport === "tcp" ? SIPP_TCP_NOFILE : 1048576;
     const startRole = async (spec: SippRoleSpec) => {
       const out = await run(
         "loadgen",
@@ -341,7 +598,13 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           image: SIPP_IMAGE,
           detach: true,
           platform: "linux/amd64",
-          ulimits: ["nofile=1048576:1048576"],
+          ...(cluster
+            ? {
+                network: cluster.network,
+                ...(cluster.fixedIps ? { ip: cluster.sippIps[spec.role] } : {})
+              }
+            : {}),
+          ulimits: [`nofile=${nofile}:${nofile}`],
           volumes: [
             `${paths.project}:${SIPP_PROJECT_DIR}:ro`,
             `${rawDir}:/raw`
@@ -443,6 +706,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     rawDir: string,
     startedMs: number
   ): Promise<{ steps: number; aborted: string | null }> {
+    const onCluster = targetOf(benchmark) === "cluster";
+    const unresponsive = onCluster ? CLUSTER_UNRESPONSIVE : UUT_UNRESPONSIVE;
     let failedChecks = 0;
     let nextCheck = deps.now() + CHECK_INTERVAL_MS;
     const waitUntil = async (deadline: number): Promise<boolean> => {
@@ -450,7 +715,9 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       if (now >= deadline) return true;
       if (now >= nextCheck) {
         nextCheck = now + CHECK_INTERVAL_MS;
-        const out = await run("uut", "true", 20 * 1000);
+        const out = onCluster
+          ? await kube("kubectl get --raw=/readyz >/dev/null", 60 * 1000)
+          : await run("uut", "true", 20 * 1000);
         failedChecks = out.code === 0 ? 0 : failedChecks + 1;
         if (failedChecks >= MAX_FAILED_CHECKS) return false;
       }
@@ -464,7 +731,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           durationToSeconds(benchmark.duration)) *
         1000;
       const ok = await waitUntil(startedMs + totalMs);
-      return { steps: 0, aborted: ok ? null : UUT_UNRESPONSIVE };
+      return { steps: 0, aborted: ok ? null : unresponsive };
     }
 
     const { start, step, max, every } = benchmark.load.rate;
@@ -476,7 +743,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       const ok = await waitUntil(
         startedMs + (index + 1) * everyMs + STEP_GRACE_MS
       );
-      if (!ok) return { steps: Math.max(index, 1), aborted: UUT_UNRESPONSIVE };
+      if (!ok) return { steps: Math.max(index, 1), aborted: unresponsive };
       const evaluation = await evaluateCapacityStep({
         fs: deps.fs,
         rawDir,
@@ -510,6 +777,13 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     );
   }
 
+  /** The cluster sampler's file as the UUT's sampler lines. */
+  async function convertKubeSamples(rawDir: string) {
+    const file = `${rawDir}/kube-uut.jsonl`;
+    const text = (await deps.fs.exists(file)) ? await deps.fs.readFile(file) : "";
+    await deps.fs.writeFile(`${rawDir}/sampler-uut.jsonl`, toKubeSamplerLines(text));
+  }
+
   async function mergeHostFiles(rawDir: string) {
     const read = async (file: string) =>
       (await deps.fs.exists(`${rawDir}/${file}`))
@@ -534,9 +808,10 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     startedMs: number,
     endedMs: number,
     steps: number,
-    registerUsers: number
+    registerUsers: number,
+    rate: BenchmarkRate | undefined
   ) {
-    const tool = `SIPp ${state.tools.sipp.replace(/-.*$/, "")}, UDP${benchmark.telemetry.otlp ? "; OpenTelemetry" : ""}`;
+    const tool = `SIPp ${state.tools.sipp.replace(/-.*$/, "")}, ${benchmark.load.transport.toUpperCase()}${benchmark.telemetry.otlp ? "; OpenTelemetry" : ""}`;
     const base = {
       startedAt: iso(startedMs),
       endedAt: iso(endedMs),
@@ -562,14 +837,18 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
                 from: iso(window.fromMs),
                 to: iso(window.toMs)
               };
-            })
+            }),
+            registerUsers
           }
         : {
             ...base,
             kind: "soak",
             load: {
-              cps: benchmark.load.rate.cps,
-              holdS: durationToSeconds(benchmark.load.hold)
+              cps:
+                rate?.cps ??
+                ("cps" in benchmark.load.rate ? benchmark.load.rate.cps : 0),
+              holdS: durationToSeconds(benchmark.load.hold),
+              ...(rate ? { rateSource: rate.rateSource } : {})
             },
             registerUsers
           };

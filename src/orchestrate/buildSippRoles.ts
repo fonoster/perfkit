@@ -2,11 +2,15 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
-import type { BenchmarkConfig } from "../schemas/index.js";
+import { type BenchmarkConfig, targetOf } from "../schemas/index.js";
 import {
+  CAPACITY_RECV_TIMEOUT_MS,
   callIdOf,
   REGISTER_RATE,
+  SIPP_LANES,
+  SIPP_MAX_SOCKET_CAP,
   SIPP_PORTS,
+  SIPP_SOCKET_MARGIN,
   type SippRole
 } from "./constants.js";
 
@@ -50,42 +54,131 @@ export interface SippRolesInput {
   loadgenIp: string;
   /** Rows of the register users file, after its first line. */
   registerUsers: number;
+  /** A cluster benchmark's entry; otherwise `<uutIp>:<load.port>`. */
+  target?: { ip: string; port: number };
+  /** A soak's calls per second, required when its rate is `fromCapacity`. */
+  cps?: number;
+  /** A role's own address instead of `loadgenIp` (SIPp on the kind network). */
+  bindIps?: Partial<Record<SippRole, string>>;
 }
 
 /**
  * The SIPp roles of a benchmark, in the order they start, with the
- * Contract's flags: a capacity benchmark has only the uac; a soak has its
- * callees (the register scenario, answering INVITEs with the uas scenario
- * through `-oocsf`, on port 5070) before its uac. Each role has its own
- * Call-ID prefix (`-cid_str <role>-%u-%p@%s`) and binds to the load
+ * Contract's flags. Either kind can have callees: the register scenario,
+ * answering INVITEs with the uas scenario through `-oocsf`, on port 5070,
+ * or the uas alone on 5070; they start before the uac. Each role has its
+ * own Call-ID prefix (`-cid_str <role>-%u-%p@%s`) and binds to the load
  * generator's address (`-i`), which scenarios use as [local_ip]. The uac and
- * register roles send to `<UUT IP>:<load.port>`; no role gets `-s`. The hold
- * is `-d`.
+ * register roles send to the target; no role gets `-s`. The hold is `-d`.
+ *
+ * A capacity uac ramps (`-rate_increase`, `-rate_max`, `-no_rate_quit`),
+ * gives up on a message after 10 s (`-recv_timeout`) and may hold
+ * `max × (hold + 20)` calls open; its callees may hold as many more. A soak
+ * holds `cps × (hold + 10)`. Over TCP every role runs `-t tn`, one
+ * connection per call, with `-max_socket` sized to its open calls. A
+ * cluster benchmark's roles are in the cluster lane: 1000 ports up and a
+ * `k8s-` Call-ID prefix.
  */
 export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
   const { benchmark } = input;
   const { load } = benchmark;
-  const target = `${input.uutIp}:${load.port}`;
+  const lane = SIPP_LANES[targetOf(benchmark)];
+  const portOf = (role: SippRole) => SIPP_PORTS[role] + lane.portOffset;
+  const target = input.target
+    ? `${input.target.ip}:${input.target.port}`
+    : `${input.uutIp}:${load.port}`;
   const holdS = durationToSeconds(load.hold);
   const hold = ["-d", String(holdS * 1000)];
+  const tcp = load.transport === "tcp";
   const scenarioFlags = (role: SippRole, scenario: string) => [
     "-sf",
     `${SIPP_PROJECT_DIR}/${scenario}`,
     "-i",
-    input.loadgenIp,
+    input.bindIps?.[role] ?? input.loadgenIp,
     "-p",
-    String(SIPP_PORTS[role]),
+    String(portOf(role)),
     "-cid_str",
-    callIdOf(role),
-    ...SIPP_COMMON_FLAGS
+    callIdOf(role, lane.prefix),
+    ...(tcp ? ["-t", "tn", ...SIPP_COMMON_FLAGS.slice(2)] : SIPP_COMMON_FLAGS)
   ];
   const users = (file: string | undefined) =>
     file ? ["-inf", `${SIPP_PROJECT_DIR}/${file}`] : [];
   const n = (value: number) => String(value);
+  /** `-l <calls>`, and over TCP `-max_socket` for them. */
+  const open = (calls: number) => [
+    "-l",
+    n(calls),
+    ...(tcp
+      ? [
+          "-max_socket",
+          n(Math.min(calls + SIPP_SOCKET_MARGIN, SIPP_MAX_SOCKET_CAP))
+        ]
+      : [])
+  ];
+
+  const callees = (rampCalls: number | null): SippRoleSpec[] => {
+    const { register, uas } = load;
+    if (register) {
+      return [
+        {
+          role: "register",
+          scenario: register.scenario,
+          args: [
+            target,
+            ...scenarioFlags("register", register.scenario),
+            ...(uas ? ["-oocsf", `${SIPP_PROJECT_DIR}/${uas.scenario}`] : []),
+            ...users(register.users),
+            "-m",
+            n(input.registerUsers),
+            "-r",
+            String(REGISTER_RATE),
+            ...open(input.registerUsers + (rampCalls ?? 0)),
+            "-key",
+            "expires",
+            n(register.expires),
+            "-key",
+            "refresh_ms",
+            n((register.expires / 2) * 1000),
+            "-key",
+            "uas_port",
+            String(portOf("register"))
+          ]
+        }
+      ];
+    }
+    if (uas) {
+      return [
+        {
+          role: "uas",
+          scenario: uas.scenario,
+          args: [
+            ...scenarioFlags("uas", uas.scenario),
+            ...open(rampCalls ?? soakCalls())
+          ]
+        }
+      ];
+    }
+    return [];
+  };
+
+  const soakCps = (): number => {
+    if (benchmark.kind !== "soak") return 0;
+    const { rate } = benchmark.load;
+    if ("cps" in rate) return rate.cps;
+    if (input.cps === undefined) {
+      throw new Error(
+        `${benchmark.id}: the soak's rate comes from ${rate.fromCapacity}, so its calls per second must be given`
+      );
+    }
+    return input.cps;
+  };
+  const soakCalls = () => Math.ceil(soakCps() * (holdS + 10));
 
   if (benchmark.kind === "capacity") {
     const { start, step, every, max } = benchmark.load.rate;
+    const rampCalls = Math.ceil(max * (holdS + 20));
     return [
+      ...callees(rampCalls),
       {
         role: "uac",
         scenario: load.uac.scenario,
@@ -104,56 +197,18 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
           "-rate_max",
           n(max),
           "-no_rate_quit",
-          "-l",
-          n(Math.ceil(max * (holdS + 10))),
+          "-recv_timeout",
+          n(CAPACITY_RECV_TIMEOUT_MS),
+          ...open(rampCalls),
           ...hold
         ]
       }
     ];
   }
 
-  const { cps } = benchmark.load.rate;
-  const limit = n(Math.ceil(cps * (holdS + 10)));
-  const { register, uas } = benchmark.load;
-  const callees: SippRoleSpec[] = register
-    ? [
-        {
-          role: "register",
-          scenario: register.scenario,
-          args: [
-            target,
-            ...scenarioFlags("register", register.scenario),
-            ...(uas ? ["-oocsf", `${SIPP_PROJECT_DIR}/${uas.scenario}`] : []),
-            ...users(register.users),
-            "-m",
-            n(input.registerUsers),
-            "-r",
-            String(REGISTER_RATE),
-            "-l",
-            n(input.registerUsers),
-            "-key",
-            "expires",
-            n(register.expires),
-            "-key",
-            "refresh_ms",
-            n((register.expires / 2) * 1000),
-            "-key",
-            "uas_port",
-            String(SIPP_PORTS.register)
-          ]
-        }
-      ]
-    : uas
-      ? [
-          {
-            role: "uas",
-            scenario: uas.scenario,
-            args: [...scenarioFlags("uas", uas.scenario), "-l", limit]
-          }
-        ]
-      : [];
+  const cps = soakCps();
   return [
-    ...callees,
+    ...callees(null),
     {
       role: "uac",
       scenario: load.uac.scenario,
@@ -165,8 +220,7 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
         n(cps),
         "-rp",
         "1000",
-        "-l",
-        limit,
+        ...open(soakCalls()),
         ...hold
       ]
     }

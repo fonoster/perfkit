@@ -2,10 +2,11 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { withErrorHandlingAndValidation } from "../errors/index.js";
-import type {
-  CapacityBenchmarkResult,
-  CapacityRule,
-  StoppedBy
+import {
+  type CapacityBenchmarkResult,
+  type CapacityRule,
+  type StoppedBy,
+  uutProcessNames
 } from "../schemas/index.js";
 import {
   type AnalyzeCapacityInput,
@@ -72,7 +73,7 @@ export function createAnalyzeCapacity(deps: AnalyzeDeps) {
       "sampler.jsonl"
     );
     const udp = parseUdpJsonl(await read("udp.jsonl"), "udp.jsonl");
-    const uutProcesses = benchmark.uut.processes.map(({ name }) => name);
+    const uutProcesses = uutProcessNames(benchmark);
     const { p99LatencyMs, failedCallsPct } = benchmark.thresholds;
     const unit = benchmark.load.unit;
 

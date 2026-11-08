@@ -3,7 +3,11 @@
  */
 import { basename } from "node:path";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
-import type { SoakBenchmarkResult, SoakRule } from "../schemas/index.js";
+import {
+  type SoakBenchmarkResult,
+  type SoakRule,
+  uutProcessNames
+} from "../schemas/index.js";
 import {
   type AnalyzeSoakInput,
   analyzeSoakInputSchema
@@ -73,7 +77,7 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
       await read("sampler.jsonl"),
       "sampler.jsonl"
     );
-    const uutProcesses = benchmark.uut.processes.map(({ name }) => name);
+    const uutProcesses = uutProcessNames(benchmark);
     const warmupS = durationToSeconds(benchmark.warmup);
     const durationMs = durationToSeconds(benchmark.duration) * 1000;
     const warmupEndMs = Date.parse(meta.startedAt) + warmupS * 1000;

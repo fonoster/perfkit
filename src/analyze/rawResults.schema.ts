@@ -33,7 +33,16 @@ export const capacityMetaSchema = z.strictObject({
   kind: z.literal("capacity"),
   steps: z
     .array(stepWindowSchema)
-    .min(1, { error: "expected at least one step" })
+    .min(1, { error: "expected at least one step" }),
+  registerUsers: count.default(0)
+});
+
+/** Where a soak's rate came from, when perfkit.yaml has `rate.fromCapacity`. */
+export const rateSourceSchema = z.strictObject({
+  fromCapacity: nonEmptyString,
+  /** That benchmark's limit; null when it found none and fallbackCps ran. */
+  limit: nonNegativeNumber.nullable(),
+  fraction: positiveNumber
 });
 
 export const soakMetaSchema = z.strictObject({
@@ -41,7 +50,8 @@ export const soakMetaSchema = z.strictObject({
   kind: z.literal("soak"),
   load: z.strictObject({
     cps: positiveNumber,
-    holdS: nonNegativeNumber
+    holdS: nonNegativeNumber,
+    rateSource: rateSourceSchema.optional()
   }),
   registerUsers: count.default(0)
 });
@@ -103,6 +113,7 @@ export const otlpLineSchema = z.looseObject({
 
 export type CapacityMeta = z.infer<typeof capacityMetaSchema>;
 export type SoakMeta = z.infer<typeof soakMetaSchema>;
+export type RateSource = z.infer<typeof rateSourceSchema>;
 export type SamplerLine = z.infer<typeof samplerLineSchema>;
 export type UdpLine = z.infer<typeof udpLineSchema>;
 export type OtlpLine = z.infer<typeof otlpLineSchema>;

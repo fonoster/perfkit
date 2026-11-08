@@ -2,6 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import {
+  targetOf,
   type BenchmarkResult,
   type Report,
   reportSchema,
@@ -15,7 +16,8 @@ import { toReportProject } from "./toReportProject.js";
  * The run's report.json v1 from its state and the results of the selected
  * benchmarks. Every benchmark of perfkit.yaml is listed, in its order; one
  * not selected with --benchmarks is `not-run`. With --local the provider,
- * region and sizes are `local`.
+ * region and sizes are `local`. A run with a Kubernetes cluster names it in
+ * `run.infra.cluster`.
  *
  * @throws when the result is not a valid report (a bug, not bad input)
  */
@@ -35,6 +37,7 @@ export function buildReport(
         title: benchmark.title,
         narrative: benchmark.narrative,
         unit: benchmark.load.unit,
+        target: targetOf(benchmark),
         verdict: "not-run",
         reason: NOT_SELECTED
       } as BenchmarkResult)
@@ -64,7 +67,17 @@ export function buildReport(
           memoryMB: state.machines.loadgen.memoryMB
         },
         os: state.machines.uut.os,
-        docker: state.machines.uut.docker
+        docker: state.machines.uut.docker,
+        ...(state.cluster
+          ? {
+              cluster: {
+                provider: state.cluster.provider,
+                nodes: state.cluster.nodes,
+                size: state.cluster.size,
+                version: state.cluster.version
+              }
+            }
+          : {})
       },
       images: Object.fromEntries(
         plan.images.map((image) => [image.key, image.ref])

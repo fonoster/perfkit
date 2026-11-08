@@ -8,6 +8,8 @@
  * the file system.
  */
 import { z } from "zod/v4";
+import { checkClusterForHelm } from "./checkClusterForHelm.js";
+import { checkFromCapacity } from "./checkFromCapacity.js";
 import { checkUniqueIds } from "./checkUniqueIds.js";
 import { projectLiveSchema } from "./report.schema.js";
 import { checkStepEveryMultipleOfSippInterval } from "./checkStepEveryMultipleOfSippInterval.js";
@@ -77,11 +79,28 @@ const machineSizeSchema = z.strictObject({
   size: nonEmptyString
 });
 
+/**
+ * The Kubernetes cluster of the benchmarks with `uut.helm`: a DOKS node pool
+ * of `nodes` droplets of `size` (kind on this machine with --local).
+ */
+const configClusterSchema = z.strictObject({
+  size: nonEmptyString,
+  nodes: z
+    .number()
+    .int({ error: "expected a whole number" })
+    .min(1, { error: "expected 1 node or more" })
+    .max(20, { error: "expected 20 nodes or fewer" }),
+  /** A DOKS version slug, like 1.33.1-do.0; `latest` by default. */
+  version: nonEmptyString.default("latest")
+});
+
 const configInfraSchema = z.strictObject({
   provider: z.literal("digitalocean").default("digitalocean"),
   region: nonEmptyString,
   uut: machineSizeSchema,
   loadgen: machineSizeSchema,
+  /** Required when a benchmark has `uut.helm`. */
+  cluster: configClusterSchema.optional(),
   maxLifetime: durationSchema.default("9h")
 });
 
@@ -123,13 +142,53 @@ const processSchema = z.strictObject({
   })
 });
 
-const configUutSchema = z.strictObject({
+const portSchema = z
+  .number()
+  .int({ error: "expected a whole number" })
+  .min(1, { error: "expected a port from 1 to 65535" })
+  .max(65535, { error: "expected a port from 1 to 65535" });
+
+/** The unit under test on the single server: a compose file. */
+const composeUutSchema = z.strictObject({
   compose: relativePathSchema,
   setup: relativePathSchema.optional(),
   processes: z
     .array(processSchema)
     .min(1, { error: "expected at least one process" })
 });
+
+const dnsLabelSchema = z
+  .string()
+  .regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/, {
+    error: "expected a Kubernetes name: lowercase letters, digits and dashes"
+  });
+
+/** Pods sampled under one name: their CPU and memory are summed. */
+const podSchema = z.strictObject({
+  name: nonEmptyString,
+  /** A label selector, like `app.kubernetes.io/name=edgeport`. */
+  selector: nonEmptyString
+});
+
+/**
+ * The unit under test on the Kubernetes cluster: a Helm chart, installed as
+ * release `perfkit` in the namespace named after the benchmark.
+ */
+const helmSchema = z.strictObject({
+  /** The chart's directory, with its dependencies in `charts/`. */
+  chart: relativePathSchema,
+  /** A values file with `${PERFKIT_*}` placeholders. */
+  values: relativePathSchema,
+  /** The Service SIPp sends to; its address is the target. */
+  entry: z.strictObject({ service: dnsLabelSchema, port: portSchema }),
+  /** Runs once the pods are Ready, with KUBECONFIG set. */
+  setup: relativePathSchema.optional(),
+  pods: z.array(podSchema).min(1, { error: "expected at least one pod" })
+});
+
+const helmUutSchema = z.strictObject({ helm: helmSchema });
+
+const configUutSchema = z.union([composeUutSchema, helmUutSchema]);
 
 const uacSchema = z.strictObject({
   scenario: relativePathSchema,
@@ -152,13 +211,10 @@ const uasSchema = z.strictObject({
 
 const loadFields = {
   tool: z.literal("sipp"),
-  transport: z.literal("udp"),
-  port: z
-    .number()
-    .int({ error: "expected a whole number" })
-    .min(1, { error: "expected a port from 1 to 65535" })
-    .max(65535, { error: "expected a port from 1 to 65535" })
-    .default(5060),
+  /** `tcp`: one connection per call (SIPp `-t tn`). */
+  transport: z.enum(["udp", "tcp"]).default("udp"),
+  /** The UUT's SIP port on the single server; unused with `uut.helm`. */
+  port: portSchema.default(5060),
   uac: uacSchema,
   hold: durationSchema.default("0s"),
   // What one SIPp "call" is, as a plural noun for the page: "calls", "messages".
@@ -175,12 +231,29 @@ const capacityRateSchema = z.strictObject({
   max: positiveNumber
 });
 
-const soakRateSchema = z.strictObject({
-  cps: positiveNumber
-});
+/**
+ * A soak's rate: a fixed `cps`, or `fraction` of the limit a capacity
+ * benchmark of the same run measured, rounded down; `fallbackCps` when that
+ * benchmark found no limit or did not run.
+ */
+const soakRateSchema = z.union([
+  z.strictObject({
+    cps: positiveNumber
+  }),
+  z.strictObject({
+    fromCapacity: benchmarkIdSchema,
+    fraction: z
+      .number()
+      .gt(0, { error: "expected a fraction more than 0 and at most 1" })
+      .lte(1, { error: "expected a fraction more than 0 and at most 1" }),
+    fallbackCps: positiveNumber
+  })
+]);
 
 const capacityLoadSchema = z.strictObject({
   ...loadFields,
+  register: registerSchema.optional(),
+  uas: uasSchema.optional(),
   rate: capacityRateSchema
 });
 
@@ -268,7 +341,9 @@ export const perfkitConfigSchema = z
       .array(benchmarkConfigSchema)
       .min(1, { error: "expected at least one benchmark" })
       .superRefine(checkUniqueIds)
+      .superRefine(checkFromCapacity)
   })
+  .superRefine(checkClusterForHelm)
   .meta({
     title: "perfkit.yaml v1",
     description:
@@ -284,6 +359,11 @@ export type CapacityBenchmarkConfig = z.output<
   typeof capacityBenchmarkConfigSchema
 >;
 export type SoakBenchmarkConfig = z.output<typeof soakBenchmarkConfigSchema>;
+export type UutConfig = z.output<typeof configUutSchema>;
+export type HelmUutConfig = z.output<typeof helmUutSchema>;
+export type ComposeUutConfig = z.output<typeof composeUutSchema>;
+export type ClusterConfig = z.output<typeof configClusterSchema>;
+export type SoakRateConfig = z.output<typeof soakRateSchema>;
 
 function isRegExp(value: string): boolean {
   try {

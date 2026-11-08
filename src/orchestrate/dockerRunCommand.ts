@@ -23,14 +23,19 @@ export interface DockerRunSpec {
   workdir?: string;
   env?: Record<string, string>;
   ulimits?: string[];
+  /** `--network`; `host` by default. */
+  network?: string;
+  /** `--ip`, an address on `network`. */
+  ip?: string;
   /** The command and its arguments, after the image. */
   command: string[];
 }
 
 /**
  * A `docker run` command line. Every container perfkit starts uses the host
- * network and carries the `perfkit.run=<run id>` label, so a cancelled run
- * can remove them all.
+ * network (or, for a kind cluster's benchmarks, the kind network) and
+ * carries the `perfkit.run=<run id>` label, so a cancelled run can remove
+ * them all.
  */
 export function dockerRunCommand(spec: DockerRunSpec): string {
   return shellJoin([
@@ -42,7 +47,8 @@ export function dockerRunCommand(spec: DockerRunSpec): string {
     "--label",
     `${RUN_LABEL}=${spec.runId}`,
     "--network",
-    "host",
+    spec.network ?? "host",
+    ...(spec.ip ? ["--ip", spec.ip] : []),
     ...(spec.pidHost ? ["--pid", "host"] : []),
     ...(spec.capAdd ?? []).flatMap((cap) => ["--cap-add", cap]),
     ...(spec.platform ? ["--platform", spec.platform] : []),

@@ -6,7 +6,8 @@ import { memoryGrowthMBPerHour } from "../analyze/memoryGrowthMBPerHour.js";
 import {
   LIVE_MAX_SAMPLES,
   type LiveSoak,
-  type SoakBenchmarkConfig
+  type SoakBenchmarkConfig,
+  uutProcessNames
 } from "../schemas/index.js";
 import { downsample } from "./downsample.js";
 import { liveStateOf } from "./liveStateOf.js";
@@ -48,7 +49,7 @@ export function buildLiveSoak(input: {
   const warmupEndMs =
     loadStartedMs === null ? null : loadStartedMs + warmupS * 1000;
   const samples = progress?.samples ?? [];
-  const memory = benchmark.uut.processes.map(({ name }) => {
+  const memory = uutProcessNames(benchmark).map((name) => {
     const own = samples.filter((sample) => sample.name === name);
     const last = own.at(-1);
     const hourAfterWarmup =
@@ -77,7 +78,11 @@ export function buildLiveSoak(input: {
     loadStartedAt: iso(loadStartedMs),
     estimatedStartAt: state === "queued" ? iso(input.estimatedStartMs) : null,
     plannedS,
-    cps: benchmark.load.rate.cps,
+    cps:
+      record?.cps ??
+      ("cps" in benchmark.load.rate
+        ? benchmark.load.rate.cps
+        : benchmark.load.rate.fallbackCps),
     warmupS,
     durationS,
     elapsedS,

@@ -3,8 +3,19 @@
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
-import type { BenchmarkConfig } from "../schemas/index.js";
-import { type AgentDeps, createRunBenchmark } from "./createRunBenchmark.js";
+import {
+  type BenchmarkConfig,
+  type SoakBenchmarkConfig,
+  targetOf
+} from "../schemas/index.js";
+import { analyzeBenchmark } from "./analyzeBenchmark.js";
+import {
+  type AgentDeps,
+  type BenchmarkRate,
+  createRunBenchmark
+} from "./createRunBenchmark.js";
+import { liveAnalyzeDeps } from "./liveAnalyzeDeps.js";
+import { resolveSoakRate } from "./resolveSoakRate.js";
 import { AgentFailure } from "./errors.js";
 import { runPaths } from "./paths.js";
 import {
@@ -21,10 +32,15 @@ export type AgentOutcome =
 /**
  * Creates the agent, `perfkit agent --run <id>`, which drives the load from
  * the load generator so the CLI machine can disconnect. It reads
- * `<root>/run.json`, runs every benchmark of the plan in order (the first's
- * compose down before the second's compose up), keeps `status.json`, and
- * writes `raw/<id>/done` per benchmark and `done` at the end. An
- * AgentFailure stops the run: it writes `failed` with the message instead.
+ * `<root>/run.json` and runs every capacity benchmark of the plan, one
+ * after another in plan order (the first's compose down before the
+ * second's compose up), then every soak: the soaks of different targets
+ * (the server, the cluster) at the same time, those of one target one
+ * after another. A soak with `rate.fromCapacity` runs at that fraction of
+ * the capacity benchmark's limit, or at `fallbackCps`. It keeps
+ * `status.json`, and writes `raw/<id>/done` per benchmark and `done` at the
+ * end. An AgentFailure stops the run: it writes `failed` with the message
+ * instead.
  *
  * @param deps - Host shell, file system, clock and log (injected)
  */
@@ -56,7 +72,8 @@ export function createAgent(deps: AgentDeps) {
     await save();
     const runBenchmark = createRunBenchmark(deps, state);
 
-    const step = async (benchmark: BenchmarkConfig) => {
+    const limits = new Map<string, number | null>();
+    const step = async (benchmark: BenchmarkConfig, rate?: BenchmarkRate) => {
       status.benchmarks[benchmark.id] = {
         state: "running",
         startedAt: new Date(deps.now()).toISOString(),
@@ -64,7 +81,7 @@ export function createAgent(deps: AgentDeps) {
       };
       await save();
       deps.live?.started(benchmark.id, deps.now());
-      await runBenchmark(benchmark);
+      await runBenchmark(benchmark, rate);
       deps.live?.done(benchmark.id, deps.now());
       status.benchmarks[benchmark.id] = {
         ...status.benchmarks[benchmark.id]!,
@@ -73,11 +90,49 @@ export function createAgent(deps: AgentDeps) {
       await save();
     };
 
-    try {
-      await state.plan.benchmarks.reduce(
-        (previous, benchmark) => previous.then(() => step(benchmark)),
+    const inOrder = <T>(items: readonly T[], each: (item: T) => Promise<void>) =>
+      items.reduce(
+        (previous, item) => previous.then(() => each(item)),
         Promise.resolve()
       );
+    const tool = `SIPp ${state.tools.sipp.replace(/-.*$/, "")}`;
+    const capacity = async (benchmark: BenchmarkConfig) => {
+      await step(benchmark);
+      const result = await analyzeBenchmark(
+        liveAnalyzeDeps(deps.fs),
+        benchmark,
+        paths.rawOf(benchmark.id),
+        null,
+        tool
+      ).catch(() => null);
+      limits.set(
+        benchmark.id,
+        result?.verdict === "passed" && "headline" in result
+          ? (result.headline as { limitCps: number | null }).limitCps
+          : null
+      );
+    };
+    const soak = async (benchmark: SoakBenchmarkConfig) => {
+      const resolved = resolveSoakRate(benchmark, limits);
+      if (resolved) await deps.log(resolved.line);
+      await step(
+        benchmark,
+        resolved ? { cps: resolved.cps, rateSource: resolved.rateSource } : undefined
+      );
+    };
+    const soaks = state.plan.benchmarks.filter(
+      (benchmark): benchmark is SoakBenchmarkConfig => benchmark.kind === "soak"
+    );
+    const lanes = [...new Set(soaks.map(targetOf))].map((target) =>
+      soaks.filter((benchmark) => targetOf(benchmark) === target)
+    );
+
+    try {
+      await inOrder(
+        state.plan.benchmarks.filter(({ kind }) => kind === "capacity"),
+        capacity
+      );
+      await Promise.all(lanes.map((lane) => inOrder(lane, soak)));
     } catch (err) {
       const message =
         err instanceof AgentFailure
