@@ -3,6 +3,7 @@
  */
 import type { z } from "zod/v4";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
+import { DigitalOceanError } from "./errors.js";
 import { PERFKIT_TAG, resourceNameOf, runTagOf } from "./constants.js";
 import { sweepInputSchema, type SweepInput } from "./infra.schema.js";
 import { parseDuration } from "./parseDuration.js";
@@ -68,7 +69,15 @@ export function createSweep(deps: {
       deps.client.listVpcs(),
       deps.client.listFirewalls(),
       deps.client.listSshKeys(),
-      deps.client.listKubernetesClusters()
+      // A token without the kubernetes scope gets 403, and then can't have
+      // created a cluster either: sweep the rest.
+      deps.client
+        .listKubernetesClusters()
+        .catch((err: unknown) =>
+          err instanceof DigitalOceanError && err.status === 403
+            ? []
+            : Promise.reject(err)
+        )
     ]);
     const ownClusters = clusters.flatMap((cluster) => {
       const runId = runIdOfCluster(cluster);

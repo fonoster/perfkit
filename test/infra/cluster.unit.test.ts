@@ -10,6 +10,7 @@ import {
   createSweep,
   createTeardown,
   createWithRun,
+  DigitalOceanError,
   type DoKubernetesClusterCreate,
   type Plan,
   type SignalSource
@@ -277,6 +278,48 @@ describe("a run's Kubernetes cluster", () => {
       expect(formatSweep(result)).to.equal(
         `deleted Kubernetes cluster ${old} with its load balancers and volumes (age 48h00m)\n`
       );
+    });
+
+    it("should sweep droplets as before when the token can't list clusters (403), and fail on other errors", async () => {
+      // Arrange
+      const client = new FakeDigitalOcean();
+      client.seedDroplet({
+        name: `perfkit-${RUN_ID}-uut`,
+        tags: ["perfkit", `perfkit-run-${RUN_ID}`],
+        createdAt: START
+      });
+      client.listKubernetesClusters = async () => {
+        throw new DigitalOceanError(
+          "You are not authorized to perform this operation",
+          403,
+          "GET",
+          "/kubernetes/clusters"
+        );
+      };
+      const sweep = createSweep({
+        client,
+        teardown: createTeardown({
+          client,
+          sleep: async () => {},
+          now: () => START
+        }),
+        now: () => START
+      });
+
+      // Act
+      const result = await sweep({ runId: RUN_ID });
+      client.listKubernetesClusters = async () => {
+        throw new DigitalOceanError("server error", 500, "GET", "x");
+      };
+      const err = await sweep({ runId: RUN_ID }).catch((e: unknown) => e);
+
+      // Assert
+      expect(result.runs[0]!.droplets.map(({ name }) => name)).to.deep.equal([
+        `perfkit-${RUN_ID}-uut`
+      ]);
+      expect(result.runs[0]!.clusters).to.deep.equal([]);
+      expect(client.droplets).to.deep.equal([]);
+      expect(err).to.be.instanceOf(DigitalOceanError);
     });
 
     it("should delete a run's cluster at any age with --run, and only list it with --dry-run", async () => {
