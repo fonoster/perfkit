@@ -1150,6 +1150,9 @@
                               "fraction": {
                                 "type": "number",
                                 "exclusiveMinimum": 0
+                              },
+                              "lowerBound": {
+                                "type": "boolean"
                               }
                             },
                             "required": [

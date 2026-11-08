@@ -42,7 +42,9 @@ export const rateSourceSchema = z.strictObject({
   fromCapacity: nonEmptyString,
   /** That benchmark's limit; null when it found none and fallbackCps ran. */
   limit: nonNegativeNumber.nullable(),
-  fraction: positiveNumber
+  fraction: positiveNumber,
+  /** True when the limit is a lower bound: the load generator gave out first. */
+  lowerBound: z.boolean().optional()
 });
 
 export const soakMetaSchema = z.strictObject({

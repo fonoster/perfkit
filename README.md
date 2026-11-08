@@ -440,8 +440,10 @@ both machines. They are reported and never change the verdict.
 ### Soak
 
 A soak holds a fixed rate for hours to find leaks. With `rate.fromCapacity`, the rate is
-`fraction ×` the limit that capacity benchmark measured earlier in the same run, rounded down, or
-`fallbackCps` when it found none; the progress log and `load.rateSource` in report.json say which.
+`fraction ×` the limit that capacity benchmark measured earlier in the same run, rounded down
+(when it was inconclusive because the load generator gave out, the highest step before that, if
+every one passed, as a lower bound), or `fallbackCps` when it found none; the progress log and
+`load.rateSource` in report.json say which.
 On the cluster, a restart is a container restart of a sampled pod (its restart count went up).
 
 - **Warm-up excluded.** Nothing measured during `warmup` counts toward any rule.

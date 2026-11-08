@@ -18,11 +18,32 @@ const fromCapacity = soakBenchmarkConfigSchema.parse({
 describe("resolveSoakRate", () => {
   it("should run at fraction × the limit, rounded down", () => {
     expect(
-      resolveSoakRate(fromCapacity, new Map([["k8s-capacity", 3001]]))
+      resolveSoakRate(
+        fromCapacity,
+        new Map([["k8s-capacity", { cps: 3001, lowerBound: false }]])
+      )
     ).to.deep.equal({
       cps: 1500,
       rateSource: { fromCapacity: "k8s-capacity", limit: 3001, fraction: 0.5 },
       line: "[k8s-soak] rate 1,500 calls/s: 0.5 × the limit of k8s-capacity (3,001 calls/s)"
+    });
+  });
+
+  it("should run at fraction × a lower-bound limit and say so", () => {
+    expect(
+      resolveSoakRate(
+        fromCapacity,
+        new Map([["k8s-capacity", { cps: 300, lowerBound: true }]])
+      )
+    ).to.deep.equal({
+      cps: 150,
+      rateSource: {
+        fromCapacity: "k8s-capacity",
+        limit: 300,
+        fraction: 0.5,
+        lowerBound: true
+      },
+      line: "[k8s-soak] rate 150 calls/s: 0.5 × the lower-bound limit of k8s-capacity (at least 300 calls/s)"
     });
   });
 
@@ -41,7 +62,10 @@ describe("resolveSoakRate", () => {
       "[k8s-soak] rate 50 calls/s (fallbackCps): k8s-capacity did not run"
     );
     expect(
-      resolveSoakRate(fromCapacity, new Map([["k8s-capacity", 1]]))?.cps
+      resolveSoakRate(
+        fromCapacity,
+        new Map([["k8s-capacity", { cps: 1, lowerBound: false }]])
+      )?.cps
     ).to.equal(50);
   });
 

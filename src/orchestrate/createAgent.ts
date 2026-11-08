@@ -9,6 +9,7 @@ import {
   targetOf
 } from "../schemas/index.js";
 import { analyzeBenchmark } from "./analyzeBenchmark.js";
+import { type CapacityLimit, capacityLimitOf } from "./capacityLimitOf.js";
 import {
   type AgentDeps,
   type BenchmarkRate,
@@ -83,7 +84,7 @@ export function createAgent(deps: AgentDeps) {
     await save();
     const runBenchmark = createRunBenchmark(deps, state);
 
-    const limits = new Map<string, number | null>();
+    const limits = new Map<string, CapacityLimit | null>();
     const step = async (benchmark: BenchmarkConfig, rate?: BenchmarkRate) => {
       status.benchmarks[benchmark.id] = {
         state: "running",
@@ -121,8 +122,8 @@ export function createAgent(deps: AgentDeps) {
       ).catch(() => null);
       limits.set(
         benchmark.id,
-        result?.verdict === "passed" && "headline" in result
-          ? (result.headline as { limitCps: number | null }).limitCps
+        benchmark.kind === "capacity"
+          ? capacityLimitOf(result, benchmark.thresholds)
           : null
       );
     };
@@ -148,7 +149,16 @@ export function createAgent(deps: AgentDeps) {
         state.plan.benchmarks.filter(({ kind }) => kind === "capacity"),
         capacity
       );
-      await Promise.all(lanes.map((lane) => inOrder(lane, soak)));
+      // A soak that fails doesn't cut short the soak of the other target:
+      // each lane runs to its end, then the first failure fails the run.
+      const settled = await Promise.allSettled(
+        lanes.map((lane) => inOrder(lane, soak))
+      );
+      const failure = settled.find(
+        (outcome): outcome is PromiseRejectedResult =>
+          outcome.status === "rejected"
+      );
+      if (failure) throw failure.reason;
     } catch (err) {
       const message =
         err instanceof AgentFailure

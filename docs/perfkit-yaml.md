@@ -160,7 +160,7 @@ the other kind rejects them.
 | `load.rate.cps` | number (calls/s) | *soak*: yes, without `fromCapacity` | | The fixed rate. Keep it well below saturation: a soak looks for leaks, not limits. |
 | `load.rate.fromCapacity` | benchmark id | *soak*: instead of `cps` | | A capacity benchmark of this file. The soak runs at `fraction ×` the limit it measured in the same run, rounded down. |
 | `load.rate.fraction` | number, more than 0, at most 1 | *soak*: yes, with `fromCapacity` | | Like `0.5`. |
-| `load.rate.fallbackCps` | number (calls/s) | *soak*: yes, with `fromCapacity` | | The rate when that benchmark found no limit (failed, inconclusive, aborted), did not run, or the fraction rounds down to 0. The report records which: `load.rateSource`. |
+| `load.rate.fallbackCps` | number (calls/s) | *soak*: yes, with `fromCapacity` | | The rate when that benchmark found no limit (failed, aborted, or inconclusive with no passing step), did not run, or the fraction rounds down to 0. When it was inconclusive because the load generator gave out and every step before passed, the highest of those steps is the limit, as a lower bound. The report records which: `load.rateSource`. |
 | `telemetry` | object | no | `{ otlp: false }` | |
 | `telemetry.otlp` | boolean | yes, if `telemetry` is set | | Collect OpenTelemetry spans, for the report's per-service hops. |
 | `telemetry.sampleRatio` | number, more than 0, at most 1 | no | `0.01` | The share of calls traced. |
@@ -187,7 +187,8 @@ happens, up to `hold` + 10 s after the call starts, so `every` should be at leas
 
 The capacity benchmarks run first, one after another, in file order. Then every soak runs: soaks
 of different targets (the server and the cluster) at the same time, soaks of one target one after
-another. A cluster benchmark's SIPp roles listen 1000 ports up (6080, 6070) and carry the `k8s-`
+another. A soak that fails doesn't cut short the other target's: both run to their end, then the
+run fails. A cluster benchmark's SIPp roles listen 1000 ports up (6080, 6070) and carry the `k8s-`
 Call-ID prefix, so they never collide with the server's on the one load generator.
 
 ### A cluster benchmark

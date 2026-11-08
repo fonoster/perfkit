@@ -100,7 +100,7 @@ What else a benchmark carries depends on its verdict:
 | `warmupS` | number (s) | Soak: the warm-up, excluded from every verdict. |
 | `tool` | string | The load tool as shown on the page, like `SIPp 3.7.3, UDP`. |
 | `load.cps`, `load.holdS` | number | Soak: the rate it ran at (calls/s) and call hold time (s). |
-| `load.rateSource` | object | Soak, optional: only with `rate.fromCapacity`. `fromCapacity` (the capacity benchmark), `limit` (its limit in calls/s, or null when it found none or did not run, so `fallbackCps` ran) and `fraction`. |
+| `load.rateSource` | object | Soak, optional: only with `rate.fromCapacity`. `fromCapacity` (the capacity benchmark), `limit` (its limit in calls/s, or null when it found none or did not run, so `fallbackCps` ran), `fraction`, and `lowerBound: true` when the limit is a lower bound (the ramp reached `max`, or the load generator gave out first). |
 | `rules` | list | One entry per threshold checked: `id` (the threshold's name), `limit`, `measured` and `passed`. A soak's `memoryGrowthMBPerHour` rule has one entry per process, with `process`. |
 | `resources.processes` | list | Per process in perfkit.yaml: `name` and `samples`, each `{ t, rssMB, cpuPct, fds, pid }`. |
 | `hops` | object | `sampleRatio`, `spans` (count) and `services`, each `{ service, p50Ms, p99Ms }`. |

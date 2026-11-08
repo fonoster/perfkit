@@ -138,6 +138,36 @@ describe("a run with a Kubernetes cluster", () => {
     expect(commands.some((c) => c.includes("compose"))).to.equal(false);
   });
 
+  it("should let the server soak finish when the cluster soak fails, then fail the run", async () => {
+    // Arrange
+    const { setup } = await clusterRun("k8s-capacity,k8s-soak,one-soak");
+    const answer = setup.hosts.onDocker;
+    setup.hosts.onDocker = async (host, command, by) =>
+      command.includes(
+        "helm upgrade --install perfkit /opt/perfkit/charts/k8s-soak"
+      )
+        ? { code: 1, stdout: "", stderr: "Error: chart broke\n" }
+        : answer(host, command, by);
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({
+      status: "failed",
+      message: "helm install failed for k8s-soak: Error: chart broke"
+    });
+    const root = setup.hosts.roots.loadgen;
+    expect(
+      await readFile(join(root, "raw", "one-soak", "done"), "utf8")
+    ).to.match(/^\d{4}-/);
+    expect(
+      await readFile(join(root, "raw", "one-soak", "aborted"), "utf8").catch(
+        () => null
+      )
+    ).to.equal(null);
+  });
+
   it("should write a report naming the cluster and each benchmark's target, then delete the cluster with everything else", async () => {
     // Arrange
     const { setup } = await clusterRun("k8s-capacity,one-soak");
@@ -221,7 +251,7 @@ describe("a run with a Kubernetes cluster", () => {
     expect(soakUac).to.include("-r 100 -rp 1000");
     const root = setup.hosts.roots.loadgen;
     expect(await readFile(join(root, "progress.log"), "utf8")).to.include(
-      "[k8s-soak] rate 100 calls/s: 0.5 × the limit of k8s-capacity (200 calls/s)"
+      "[k8s-soak] rate 100 calls/s: 0.5 × the lower-bound limit of k8s-capacity (at least 200 calls/s)"
     );
     const meta = JSON.parse(
       await readFile(join(root, "raw", "k8s-soak", "meta.json"), "utf8")
@@ -229,7 +259,12 @@ describe("a run with a Kubernetes cluster", () => {
     expect(meta.load).to.deep.equal({
       cps: 100,
       holdS: 30,
-      rateSource: { fromCapacity: "k8s-capacity", limit: 200, fraction: 0.5 }
+      rateSource: {
+        fromCapacity: "k8s-capacity",
+        limit: 200,
+        fraction: 0.5,
+        lowerBound: true
+      }
     });
     expect(meta.tool).to.equal("SIPp 3.7.3, TCP");
   });

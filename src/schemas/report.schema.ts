@@ -321,13 +321,16 @@ const soakMeasuredSchema = z
       holdS: nonNegativeNumber,
       /**
        * With `rate.fromCapacity`: the capacity benchmark, its limit (null
-       * when it found none and `fallbackCps` ran) and the fraction.
+       * when it found none and `fallbackCps` ran), the fraction, and
+       * whether the limit is a lower bound.
        */
       rateSource: z
         .strictObject({
           fromCapacity: benchmarkIdSchema,
           limit: nonNegativeNumber.nullable(),
-          fraction: positiveNumber
+          fraction: positiveNumber,
+          /** The limit is a lower bound: the load generator gave out first. */
+          lowerBound: z.boolean().optional()
         })
         .nullable()
         .optional()
