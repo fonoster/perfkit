@@ -70,27 +70,36 @@ the same variables as compose. A non-zero exit ends the run with exit 3. It neve
 ## SIPp scenarios
 
 perfkit runs SIPp 3.7 (`SIPP_IMAGE` in `src/tools.ts`) on the load generator, one container per
-role, with host networking. The `uac` role and the callees send to
-`<PERFKIT_UUT_IP>:<load.port>`. perfkit passes no `-s`: a scenario builds its own Request-URI,
-from SIPp's keywords and the users file. Every role gets:
+role, with host networking (on the kind network for a cluster benchmark with `--local`). The
+`uac` role and the callees send to `<PERFKIT_UUT_IP>:<load.port>`, or, for a cluster benchmark,
+to the entry Service's load balancer at `<address>:<entry.port>`. perfkit passes no `-s`: a
+scenario builds its own Request-URI, from SIPp's keywords and the users file. Every role gets:
 
 ```text
 -t u1 -buff_size 4194304 -trace_rtt -rtt_freq 10 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes -nostdin
--i <PERFKIT_LOADGEN_IP> -cid_str <role>-%u-%p@%s
+-i <PERFKIT_LOADGEN_IP> -cid_str <role>-<run id>-%u-%p@%s
 ```
 
+With `load.transport: tcp`, `-t tn` replaces `-t u1` (one connection per call), every role gets
+`-max_socket <its -l + 100, at most 60000>`, and its container `--ulimit nofile=65536:65536`.
+
 The Call-ID prefix tells the roles' calls apart: each SIPp runs as PID 1 in its container, so the
-default Call-IDs would collide. `-i` binds SIPp to the load generator's private address, so
-`[local_ip]` in a scenario is that address (`127.0.0.1` with `--local`), never one SIPp guesses
-from the host name, which can be the public or an IPv6 address. SIPp writes its response times
-every `-rtt_freq` calls and drops the ones it holds when it exits, so the value is small.
+default Call-IDs would collide; the run id (lowercase) keeps them from repeating across runs. `-i`
+binds SIPp to the load generator's private address, so `[local_ip]` in a scenario is that address
+(`127.0.0.1` with `--local`), never one SIPp guesses from the host name, which can be the public
+or an IPv6 address. A cluster benchmark binds to the load generator's public address on
+DigitalOcean (the load balancer is public, and the cluster's nodes may reach it), or to a fixed
+address on the kind network with `--local`; its roles listen 1000 ports up (6080, 6070) and their
+prefix starts with `k8s-`, so a server soak and a cluster soak can run at the same time. SIPp
+writes its response times every `-rtt_freq` calls and drops the ones it holds when it exits, so
+the value is small.
 
 | Role | Port | Flags |
 | :--- | :--- | :--- |
-| capacity `uac` | 5080 | `-sf <load.uac.scenario> -r <start> -rp 1000 -rate_increase <step> -rate_interval <every in s> -rate_max <max> -no_rate_quit -l <max × (hold + 10 s)> -d <hold ms>`, and `-inf <load.uac.users>` when set |
+| capacity `uac` | 5080 | `-sf <load.uac.scenario> -r <start> -rp 1000 -rate_increase <step> -rate_interval <every in s> -rate_max <max> -no_rate_quit -recv_timeout 10000 -l <max × (hold + 20 s)> -d <hold ms>`, and `-inf <load.uac.users>` when set |
 | soak `uac` | 5080 | `-sf <load.uac.scenario> -r <cps> -rp 1000 -l <cps × (hold + 10 s)> -d <hold ms>`, and `-inf <load.uac.users>` when set |
-| soak callees (`register`) | 5070 | `-sf <load.register.scenario> -oocsf <load.uas.scenario> -inf <load.register.users> -m <rows> -r 20 -l <rows> -key expires <expires> -key refresh_ms <expires / 2 × 1000> -key uas_port 5070` |
-| soak `uas`, without `register` | 5070 | `-sf <load.uas.scenario> -l <cps × (hold + 10 s)>` |
+| callees (`register`) | 5070 | `-sf <load.register.scenario> -oocsf <load.uas.scenario> -inf <load.register.users> -m <rows> -r 20 -l <L> -key expires <expires> -key refresh_ms <expires / 2 × 1000> -key uas_port 5070`; `<L>` is `<rows>` in a soak and `<rows> + max × (hold + 20 s)` in a capacity benchmark |
+| `uas`, without `register` | 5070 | `-sf <load.uas.scenario> -l <L>`; `<L>` is `cps × (hold + 10 s)` in a soak and `max × (hold + 20 s)` in a capacity benchmark |
 
 `<rows>` is the number of rows of the register users file after its first line. The callees are
 **one SIPp process**: the register scenario's endless REGISTER loop is the main scenario, and the
@@ -99,7 +108,8 @@ records a registration at the address of the REGISTER's top Via, not at its Cont
 that registers has to be the one that answers. Its stat files are named after the register
 scenario.
 
-**The uac starts after the callees have registered.** perfkit starts the callees first, then
+**The uac starts after the callees have registered,** in a capacity benchmark as in a soak.
+perfkit starts the callees first, then
 reads their counts file (`<register scenario>_<pid>_counts.csv`, written every 10 s) until the
 highest `<index>_200_Recv` counter reaches the number of users, so the first INVITEs never reach
 an unregistered callee. When it doesn't within `users / 20` + 60 seconds (70 s for 200 users),
@@ -142,7 +152,8 @@ The agent writes each benchmark's raw results to `/opt/perfkit/raw/<benchmark id
 | :--- | :--- |
 | `meta.json` | When SIPp started and stopped, the tool line, and the capacity steps that ran or the soak's load. |
 | `<scenario>_<pid>_.csv`, `_rtt.csv`, `_counts.csv`, `_error_codes.csv` | SIPp's own traces, one set per role. |
-| `sampler.jsonl` | Every 10 s, the UUT's processes and the load generator's SIPp roles (`sipp-uac`, `sipp-register`). |
+| `sampler.jsonl` | Every 10 s, the UUT's processes (on the cluster, its pods from the Metrics API: summed CPU integrated into ticks, working-set memory, a pid that changes when a container restarts) and the load generator's SIPp roles (`sipp-uac`, `sipp-register`, `sipp-uas`). |
+| `kube-uut.jsonl` | A cluster benchmark only: what the cluster sampler read, as Kubernetes returned it. |
 | `udp.jsonl` | Every 10 s, both hosts' UDP buffer errors, from `/proc/net/snmp`. |
 | `spans.jsonl` | With `telemetry.otlp`, the spans the OpenTelemetry Collector received. |
 | `aborted` | Why the benchmark was aborted, when it was. |

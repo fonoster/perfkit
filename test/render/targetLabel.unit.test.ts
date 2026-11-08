@@ -46,7 +46,8 @@ describe("targetLabel", () => {
   });
 
   it("should give no label for a report without targets", () => {
-    const { target: _unused, ...old } = { ...benchmark, target: undefined };
-    expect(targetLabel(old as BenchmarkResult, infra)).to.equal(null);
+    const old = { ...benchmark };
+    delete old.target;
+    expect(targetLabel(old, infra)).to.equal(null);
   });
 });
