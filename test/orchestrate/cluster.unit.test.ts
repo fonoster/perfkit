@@ -2,123 +2,12 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { expect } from "chai";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { capacityRaw, soakRaw } from "../analyze/builders.js";
-import { ROUTR_CONFIG } from "../fixtures.js";
 import { fakeRegistry, perfkit } from "../infra/fakes.js";
+import { kubeAnswers, LB_IP, routrWithCluster } from "./clusterConfig.js";
 import { doSetup, PASSING_STEPS } from "./setup.js";
-
-const LB_IP = "198.51.100.4";
-
-/**
- * The Routr example plus a chart outside the project and two cluster
- * benchmarks: a TCP capacity ramp to registered callees, and a soak at half
- * its limit.
- */
-async function routrWithCluster(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "perfkit-k8s-"));
-  const perf = join(root, "perf");
-  await cp(dirname(ROUTR_CONFIG), perf, { recursive: true });
-  await mkdir(join(root, "chart", "templates"), { recursive: true });
-  await writeFile(
-    join(root, "chart", "Chart.yaml"),
-    "apiVersion: v2\nname: uut\nversion: 0.1.0\n"
-  );
-  await mkdir(join(perf, "k8s"), { recursive: true });
-  await writeFile(
-    join(perf, "k8s", "values.yaml"),
-    'edgeport:\n  externalAddrs: ["${PERFKIT_ENTRY_IP}"]\n  image: { tag: "${PERFKIT_TARGET_VERSION}" }\n'
-  );
-  await writeFile(join(perf, "k8s", "seed.sh"), "echo seeded\n");
-  const rows = Array.from({ length: 200 }, (_, i) => `callee${i};pass${i}`);
-  await writeFile(
-    join(perf, "one-soak", "callees.csv"),
-    ["SEQUENTIAL", ...rows, ""].join("\n")
-  );
-  const yaml = (await readFile(ROUTR_CONFIG, "utf8")).replace(
-    "  maxLifetime: 9h",
-    "  cluster: { size: c-8, nodes: 3 }\n  maxLifetime: 9h"
-  );
-  const helm = `    uut:
-      helm:
-        chart: ../chart
-        values: k8s/values.yaml
-        entry: { service: perfkit-routr-edgeport-tcp, port: 5060 }
-        setup: k8s/seed.sh
-        pods:
-          - { name: one, selector: "service=one" }
-          - { name: edgeport, selector: "service=edgeport" }
-          - { name: postgres, selector: "app.kubernetes.io/name=postgresql" }`;
-  await writeFile(
-    join(perf, "perfkit.yaml"),
-    `${yaml}  - id: k8s-capacity
-    kind: capacity
-    title: Routr on Kubernetes
-    narrative: { what: Calls on Kubernetes., why: Capacity., how: SIPp ramps calls over TCP. }
-${helm}
-    load:
-      tool: sipp
-      transport: tcp
-      register: { scenario: one-soak/uac_register.xml, users: one-soak/callees.csv }
-      uas: { scenario: one-soak/uas_answer.xml }
-      uac: { scenario: edgeport-echo/uac_message.xml }
-      rate: { start: 50, step: 50, every: 60s, max: 200 }
-    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1 }
-  - id: k8s-soak
-    kind: soak
-    title: Routr on Kubernetes, six hours
-    narrative: { what: A soak on Kubernetes., why: Leaks., how: Half the limit. }
-    duration: 6h
-    warmup: 30m
-${helm}
-    load:
-      tool: sipp
-      transport: tcp
-      register: { scenario: one-soak/uac_register.xml, users: one-soak/callees.csv }
-      uas: { scenario: one-soak/uas_answer.xml }
-      uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }
-      hold: 30s
-      rate: { fromCapacity: k8s-capacity, fraction: 0.5, fallbackCps: 20 }
-    thresholds: { memoryGrowthMBPerHour: 5, failedCallsPct: 0.1, restarts: 0 }
-`
-  );
-  return join(perf, "perfkit.yaml");
-}
-
-/** Answers the Kubernetes tools: an LB address and Ready pods. */
-function kubeAnswers(command: string) {
-  if (!command.includes("alpine/k8s")) return undefined;
-  if (command.includes("kubectl get service")) {
-    return {
-      code: 0,
-      stdout: JSON.stringify({
-        spec: { ports: [{ port: 5060 }] },
-        status: { loadBalancer: { ingress: [{ ip: LB_IP }] } }
-      }),
-      stderr: ""
-    };
-  }
-  if (command.includes("kubectl get pods")) {
-    return {
-      code: 0,
-      stdout: JSON.stringify({
-        items: [
-          {
-            metadata: { name: "edgeport-0" },
-            status: {
-              phase: "Running",
-              conditions: [{ type: "Ready", status: "True" }]
-            }
-          }
-        ]
-      }),
-      stderr: ""
-    };
-  }
-  return { code: 0, stdout: "", stderr: "" };
-}
 
 async function clusterRun(selected: string) {
   const config = await routrWithCluster();
@@ -213,7 +102,7 @@ describe("a run with a Kubernetes cluster", () => {
     const steps = [
       "helm upgrade --install metrics-server",
       "helm upgrade --install perfkit /opt/perfkit/charts/k8s-capacity -n k8s-capacity --create-namespace",
-      "kubectl get service perfkit-routr-edgeport-tcp -n k8s-capacity -o json",
+      "kubectl get services -n k8s-capacity -o json",
       "--wait --timeout 15m",
       "kubectl get pods -n k8s-capacity -o json",
       "bash k8s/seed.sh k8s-capacity one-soak/callees.csv",
@@ -247,6 +136,56 @@ describe("a run with a Kubernetes cluster", () => {
       )
     ).to.equal(true);
     expect(commands.some((c) => c.includes("compose"))).to.equal(false);
+  });
+
+  it("should write a report naming the cluster and each benchmark's target, then delete the cluster with everything else", async () => {
+    // Arrange
+    const { setup } = await clusterRun("k8s-capacity,one-soak");
+    await setup.agent.run(setup.runId());
+
+    // Act
+    const collected = await perfkit(
+      ["collect", setup.runId(), "--out", setup.out],
+      setup.infra
+    );
+
+    // Assert
+    expect(collected.err).to.equal("");
+    const report = JSON.parse(
+      await readFile(join(setup.out, setup.runId(), "report.json"), "utf8")
+    );
+    expect(report.run.infra.cluster).to.deep.equal({
+      provider: "digitalocean",
+      nodes: 3,
+      size: "c-8",
+      version: "1.33.1-do.0"
+    });
+    const targets = Object.fromEntries(
+      report.benchmarks.map((b: { id: string; target: string }) => [
+        b.id,
+        b.target
+      ])
+    );
+    expect(targets).to.deep.equal({
+      "edgeport-echo": "server",
+      "one-soak": "server",
+      "k8s-capacity": "cluster",
+      "k8s-soak": "cluster"
+    });
+    const capacity = report.benchmarks.find(
+      (b: { id: string }) => b.id === "k8s-capacity"
+    );
+    expect(capacity.tool).to.equal("SIPp 3.7.3, TCP");
+    expect(collected.out).to.include(
+      "Kubernetes cluster perfkit-20261103t141210z-bd3254a"
+    );
+    expect(setup.account.clusters).to.deep.equal([]);
+    expect(setup.account.leftovers()).to.deep.equal({
+      droplets: [],
+      vpcs: [],
+      firewalls: [],
+      keys: []
+    });
   });
 
   it("should run the soak at half the capacity limit, beside the server soak, and record where its rate came from", async () => {

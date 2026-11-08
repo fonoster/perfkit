@@ -24,8 +24,9 @@ export interface KindCluster {
 }
 
 /**
- * Creates `createKindCluster`, the cluster of a --local run: one kind node
- * named `perfkit-<run id>`, MetalLB in L2 mode with a pool on the kind
+ * Creates `createKindCluster`, the cluster of a --local run: kind nodes
+ * (`infra.cluster.nodes`: a control plane, then workers) named
+ * `perfkit-<run id>`, MetalLB in L2 mode with a pool on the kind
  * network so the entry Service gets a load balancer address as on DOKS,
  * and every image the charts use (or `images:` names) that exists on this
  * machine loaded into the node. The Kubernetes tools run in a container on
@@ -74,6 +75,18 @@ export function createKindCluster(deps: {
         script
       ]);
 
+    const kindConfig = `${input.dir}/kind.yaml`;
+    await deps.writeFile(
+      kindConfig,
+      [
+        "kind: Cluster",
+        "apiVersion: kind.x-k8s.io/v1alpha4",
+        "nodes:",
+        "  - role: control-plane",
+        ...Array.from({ length: input.nodes - 1 }, () => "  - role: worker"),
+        ""
+      ].join("\n")
+    );
     await must(
       `could not create the kind cluster ${input.name}`,
       shellJoin([
@@ -82,6 +95,8 @@ export function createKindCluster(deps: {
         "cluster",
         "--name",
         input.name,
+        "--config",
+        kindConfig,
         "--wait",
         "5m"
       ]),

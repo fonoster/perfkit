@@ -9,6 +9,8 @@ export const createKindClusterInputSchema = z.strictObject({
     error: "expected perfkit-<run id in lowercase>"
   }),
   runId: z.string().min(1),
+  /** Nodes in all: a control plane, and workers for the rest. */
+  nodes: z.number().int().min(1).max(20),
   /** A private directory of this run, for the kubeconfig the tools use. */
   dir: z.string().regex(/^\//, { error: "expected an absolute path" }),
   /** Each helm benchmark's chart and rendered values, to list its images. */

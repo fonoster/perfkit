@@ -317,6 +317,7 @@ async function runLocal(
       })({
         name: plan.cluster.name,
         runId: plan.runId,
+        nodes: plan.cluster.nodes,
         dir: dirs.dir,
         charts,
         images: plan.images.map(({ name, tag }) => `${name}:${tag}`)
@@ -330,7 +331,7 @@ async function runLocal(
           provider: "kind",
           name: plan.cluster.name,
           size: "local",
-          nodes: 1,
+          nodes: plan.cluster.nodes,
           version: kind.version,
           network: "kind",
           sippIps: kind.sippIps,

@@ -39,7 +39,7 @@ export function formatPlan(
       ]),
       ...(plan.cluster
         ? field("cluster", [
-            `kind ${plan.cluster.name}, one node, MetalLB; deleted at the end`
+            `kind ${plan.cluster.name}, ${plan.cluster.nodes} node${plan.cluster.nodes === 1 ? "" : "s"}, MetalLB; deleted at the end`
           ])
         : []),
       ...field(

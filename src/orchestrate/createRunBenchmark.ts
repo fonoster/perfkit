@@ -383,20 +383,11 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       deps.now() + ENTRY_TIMEOUT_MS,
       async () => {
         const out = await kube(
-          shellJoin([
-            "kubectl",
-            "get",
-            "service",
-            helm.entry.service,
-            "-n",
-            ns,
-            "-o",
-            "json"
-          ]),
+          shellJoin(["kubectl", "get", "services", "-n", ns, "-o", "json"]),
           60 * 1000
         );
         return out.code === 0
-          ? entryAddressOf(out.stdout, helm.entry.port)
+          ? entryAddressOf(out.stdout, helm.entry.service, helm.entry.port)
           : null;
       },
       () =>

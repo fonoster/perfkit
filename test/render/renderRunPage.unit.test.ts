@@ -8,6 +8,39 @@ import { loadHistory, renderSite, RUNS_14, RUNS_4, textOf } from "./site.js";
 const RUN_14_LATEST_DELTA_RUN = "Compared with v2.31.4, Oct 27, 2026";
 
 describe("the report page", () => {
+  describe("given a report with targets and a cluster", () => {
+    it("should label each benchmark with its target, and old reports with none", async () => {
+      // Arrange
+      const report = loadReport("passed") as {
+        run: { infra: Record<string, unknown> };
+        benchmarks: Array<Record<string, unknown>>;
+      };
+      report.run.infra.cluster = {
+        provider: "digitalocean",
+        nodes: 3,
+        size: "c-8",
+        version: "1.33.1-do.0"
+      };
+      report.benchmarks[0]!.target = "server";
+      report.benchmarks[1]!.target = "cluster";
+      const labelled = await renderSite(report, loadHistory(RUNS_4));
+      const old = await renderSite(loadReport("passed"), loadHistory(RUNS_4));
+
+      // Act
+      const $ = labelled.latest();
+      const $old = old.latest();
+
+      // Assert
+      expect(textOf($, "#edgeport-echo .eyebrow")).to.equal(
+        "01 · CAPACITY · Single server"
+      );
+      expect(textOf($, "#one-soak .eyebrow")).to.equal(
+        "02 · SOAK · Kubernetes, 3 × c-8"
+      );
+      expect(textOf($old, "#edgeport-echo .eyebrow")).to.equal("01 · CAPACITY");
+    });
+  });
+
   describe("given the passed fixture with history", () => {
     it("should show the verdict, two Passed pills, the date chip and the takeaway", async () => {
       // Arrange

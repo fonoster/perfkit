@@ -431,6 +431,25 @@ describe("buildSippRoles", () => {
     expect(flagsOf(roles[1]!.args)).to.include("-r 30 -rp 1000 -l 1200");
   });
 
+  it("should put the run id in every Call-ID so they never repeat across runs", () => {
+    // Act
+    const roles = buildSippRoles({
+      benchmark: soakConfig(),
+      runId: "20261108T120000Z-abcdef0",
+      uutIp: "10.0.0.2",
+      loadgenIp: "10.0.0.3",
+      registerUsers: 200
+    });
+
+    // Assert
+    expect(flagsOf(roles[0]!.args)).to.include(
+      "-cid_str register-20261108t120000z-abcdef0-%u-%p@%s"
+    );
+    expect(flagsOf(roles[1]!.args)).to.include(
+      "-cid_str uac-20261108t120000z-abcdef0-%u-%p@%s"
+    );
+  });
+
   it("should throw for a fromCapacity soak given no rate", () => {
     // Arrange
     const benchmark = soakBenchmarkConfigSchema.parse({
