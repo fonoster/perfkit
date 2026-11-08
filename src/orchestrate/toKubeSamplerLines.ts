@@ -67,7 +67,8 @@ export function toKubeSamplerLines(text: string): string {
       const first = state.lastMs === null;
       line.pods.forEach(({ uid, restarts }) => {
         const before = state.seen.get(uid);
-        const added = before === undefined ? (first ? 0 : restarts) : restarts - before;
+        const added =
+          before === undefined ? (first ? 0 : restarts) : restarts - before;
         state.restarts += Math.max(0, added);
         state.seen.set(uid, restarts);
       });
@@ -75,7 +76,10 @@ export function toKubeSamplerLines(text: string): string {
       const usage = line.metrics.filter(({ pod }) => pods.has(pod));
       if (pods.size === 0 || usage.length === 0) return [];
       const sum = (values: string[]) =>
-        values.reduce((total, value) => total + (parseKubeQuantity(value) ?? 0), 0);
+        values.reduce(
+          (total, value) => total + (parseKubeQuantity(value) ?? 0),
+          0
+        );
       const cores = usage.reduce((total, { cpu }) => total + sum(cpu), 0);
       const bytes = usage.reduce((total, { memory }) => total + sum(memory), 0);
       const tMs = Date.parse(line.t);

@@ -61,7 +61,8 @@ async function routrWithCapacityCallees(): Promise<string> {
   await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
   const rows = Array.from(
     { length: 200 },
-    (_, i) => `callee${i};pass${i};[authentication username=callee${i} password=pass${i}]`
+    (_, i) =>
+      `callee${i};pass${i};[authentication username=callee${i} password=pass${i}]`
   );
   await writeFile(
     join(dir, "one-soak", "callees.csv"),

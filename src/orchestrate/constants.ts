@@ -22,12 +22,14 @@ export const SIPP_PROCESS = {
 } as const;
 
 /**
- * Each role's Call-ID prefix: every SIPp runs as PID 1 in its container.
- * A cluster benchmark's roles carry `k8s-` in front, so the samplers of a
- * server soak and a cluster soak running at the same time tell them apart.
+ * Each role's Call-ID prefix: every SIPp runs as PID 1 in its container,
+ * so `%p` repeats; the run id (lowercase) keeps Call-IDs from repeating
+ * across runs. A cluster benchmark's roles carry `k8s-` in front, so the
+ * samplers of a server soak and a cluster soak running at the same time
+ * tell them apart.
  */
-export function callIdOf(role: SippRole, prefix = ""): string {
-  return `${prefix}${role}-%u-%p@%s`;
+export function callIdOf(role: SippRole, prefix = "", runId?: string): string {
+  return `${prefix}${role}-${runId ? `${runId.toLowerCase()}-` : ""}%u-%p@%s`;
 }
 
 /**

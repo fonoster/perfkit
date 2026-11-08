@@ -30,6 +30,16 @@ export function resourceNameOf(runId: string): string {
   return `perfkit-${runId}`;
 }
 
+/** `perfkit-<run id in lowercase>`: a run's Kubernetes cluster (DOKS or kind). */
+export function clusterNameOf(runId: string): string {
+  return `perfkit-${runId.toLowerCase()}`;
+}
+
+/** A new DOKS cluster must be running within this, or exit 3. */
+export const CLUSTER_READY_TIMEOUT_MS = 20 * 60 * 1000;
+/** How long teardown waits for a VPC to empty after deleting a cluster. */
+export const VPC_EMPTY_AFTER_CLUSTER_TIMEOUT_MS = 10 * 60 * 1000;
+
 /** `perfkit-run-<run id>`: the tag both droplets of a run carry. */
 export function runTagOf(runId: string): string {
   return `perfkit-run-${runId}`;

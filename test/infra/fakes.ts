@@ -17,6 +17,8 @@ import type {
   DoDroplet,
   DoFirewall,
   DoFirewallInput,
+  DoKubernetesCluster,
+  DoKubernetesClusterCreate,
   DoSshKey,
   DoVpc,
   Plan,
@@ -223,6 +225,65 @@ export class FakeDigitalOcean implements DoClient {
   async deleteTag(name: string) {
     this.record("deleteTag", [name]);
     this.tags.delete(name);
+  }
+
+  clusters: DoKubernetesCluster[] = [];
+  /** getKubernetesCluster polls before a new cluster is running. */
+  pollsUntilRunning = 2;
+  private clusterPolls = new Map<string, number>();
+
+  async listKubernetesClusters() {
+    this.record("listKubernetesClusters", []);
+    return structuredClone(this.clusters);
+  }
+  async createKubernetesCluster(input: DoKubernetesClusterCreate) {
+    this.record("createKubernetesCluster", [input]);
+    const cluster: DoKubernetesCluster = {
+      id: `k8s-${this.nextId++}`,
+      name: input.name,
+      region: input.region,
+      version: input.version === "latest" ? "1.33.1-do.0" : input.version,
+      created_at: this.stamp(),
+      tags: [...input.tags],
+      status: { state: "provisioning" },
+      node_pools: input.node_pools.map((pool) => ({
+        name: pool.name,
+        size: pool.size,
+        count: pool.count,
+        nodes: []
+      }))
+    };
+    this.clusters.push(cluster);
+    return structuredClone(cluster);
+  }
+  async getKubernetesCluster(id: string) {
+    this.record("getKubernetesCluster", [id]);
+    const cluster = this.clusters.find((candidate) => candidate.id === id);
+    if (!cluster) throw new DigitalOceanError("not found", 404, "GET", "x");
+    const polls = (this.clusterPolls.get(id) ?? 0) + 1;
+    this.clusterPolls.set(id, polls);
+    if (
+      polls >= this.pollsUntilRunning &&
+      cluster.status.state === "provisioning"
+    ) {
+      cluster.status = { state: "running" };
+      cluster.node_pools = cluster.node_pools.map((pool) => ({
+        ...pool,
+        nodes: Array.from({ length: pool.count }, (_, i) => ({
+          droplet_id: String(700000 + i),
+          status: { state: "running" }
+        }))
+      }));
+    }
+    return structuredClone(cluster);
+  }
+  async getKubeconfig(id: string, expirySeconds: number) {
+    this.record("getKubeconfig", [id, expirySeconds]);
+    return `apiVersion: v1\nkind: Config\nusers:\n- name: do\n  user:\n    token: KUBE-SECRET-${id}\n`;
+  }
+  async deleteKubernetesCluster(id: string) {
+    this.record("deleteKubernetesCluster", [id]);
+    this.clusters = this.clusters.filter((cluster) => cluster.id !== id);
   }
 
   /** Adds a droplet as if an earlier run had created it. */

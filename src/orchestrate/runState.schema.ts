@@ -55,8 +55,6 @@ export const runClusterStateSchema = z.strictObject({
   version: nonEmptyString,
   /** The Docker network SIPp and the Kubernetes tools join: host or kind. */
   network: nonEmptyString,
-  /** kind only: the node's address on the kind network, for NodePorts. */
-  nodeIp: z.ipv4().nullable(),
   /** The address each SIPp role binds to (`-i`) for a cluster benchmark. */
   sippIps: sippIpsSchema,
   /** kind only: SIPp joins the network with these fixed addresses. */

@@ -49,6 +49,8 @@ export interface SippRoleSpec {
 
 export interface SippRolesInput {
   benchmark: BenchmarkConfig;
+  /** The run id, in every Call-ID (`-cid_str <role>-<run id>-%u-%p@%s`). */
+  runId?: string;
   uutIp: string;
   /** The load generator's address: SIPp binds to it (`-i`), so it is [local_ip]. */
   loadgenIp: string;
@@ -67,7 +69,7 @@ export interface SippRolesInput {
  * Contract's flags. Either kind can have callees: the register scenario,
  * answering INVITEs with the uas scenario through `-oocsf`, on port 5070,
  * or the uas alone on 5070; they start before the uac. Each role has its
- * own Call-ID prefix (`-cid_str <role>-%u-%p@%s`) and binds to the load
+ * own Call-ID prefix (`-cid_str <role>-<run id>-%u-%p@%s`) and binds to the load
  * generator's address (`-i`), which scenarios use as [local_ip]. The uac and
  * register roles send to the target; no role gets `-s`. The hold is `-d`.
  *
@@ -98,7 +100,7 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
     "-p",
     String(portOf(role)),
     "-cid_str",
-    callIdOf(role, lane.prefix),
+    callIdOf(role, lane.prefix, input.runId),
     ...(tcp ? ["-t", "tn", ...SIPP_COMMON_FLAGS.slice(2)] : SIPP_COMMON_FLAGS)
   ];
   const users = (file: string | undefined) =>

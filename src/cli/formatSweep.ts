@@ -5,7 +5,7 @@ import { formatAge } from "../infra/formatAge.js";
 import type { SweepResult } from "../infra/index.js";
 
 /**
- * The stdout lines of `sweep`: one per droplet, then one per run for its
+ * The stdout lines of `sweep`: one per droplet and Kubernetes cluster, then one per run for its
  * firewall, VPC and SSH key. A dry run says `would delete`. With nothing to
  * delete, `nothing to sweep`.
  */
@@ -14,6 +14,10 @@ export function formatSweep(result: SweepResult): string {
   const lines = result.runs.flatMap((run) => [
     ...run.droplets.map(
       ({ name, ageMs }) => `${verb} droplet ${name} (age ${formatAge(ageMs)})`
+    ),
+    ...(run.clusters ?? []).map(
+      ({ name, ageMs }) =>
+        `${verb} Kubernetes cluster ${name} with its load balancers and volumes (age ${formatAge(ageMs)})`
     ),
     ...(run.others.length > 0
       ? [

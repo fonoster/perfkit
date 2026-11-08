@@ -11,14 +11,26 @@ const ANYWHERE = { addresses: ["0.0.0.0/0", "::/0"] };
  * callees on the load generator), SSH (22) from `sshSources` and from the
  * VPC (the agent on the load generator drives the UUT over SSH at its
  * private IP), and every outbound connection. It applies to the run's
- * droplets.
+ * droplets. With a cluster, every tcp and udp port is open to its node
+ * droplets too: Routr's pods reach the callees on the load generator's
+ * public address, from their node's.
  */
 export function buildFirewall(input: {
   name: string;
   vpcRange: string;
   sshSources: string[];
   dropletIds: number[];
+  clusterDropletIds?: number[];
 }): DoFirewallInput {
+  const nodes = input.clusterDropletIds ?? [];
+  const fromNodes =
+    nodes.length === 0
+      ? []
+      : (["tcp", "udp"] as const).map((protocol) => ({
+          protocol,
+          ports: "all",
+          sources: { droplet_ids: nodes }
+        }));
   const vpc = { addresses: [input.vpcRange] };
   return {
     name: input.name,
@@ -30,7 +42,8 @@ export function buildFirewall(input: {
         protocol: "tcp",
         ports: "22",
         sources: { addresses: [...input.sshSources, input.vpcRange] }
-      }
+      },
+      ...fromNodes
     ],
     outbound_rules: [
       { protocol: "tcp", ports: "all", destinations: ANYWHERE },

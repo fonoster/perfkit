@@ -21,11 +21,7 @@ export function toFieldErrors(issues: ReadonlyArray<z.core.$ZodIssue>) {
   const flat = issues.flatMap(expandUnion).flatMap<{
     issue: z.core.$ZodIssue;
     path: PropertyKey[];
-  }>((issue) =>
-    issue.code === "unrecognized_keys"
-      ? issue.keys.map((key) => ({ issue, path: [...issue.path, key] }))
-      : [{ issue, path: [...issue.path] }]
-  );
+  }>((issue) => (issue.code === "unrecognized_keys" ? issue.keys.map((key) => ({ issue, path: [...issue.path, key] })) : [{ issue, path: [...issue.path] }]));
   const sorted = [...flat].sort((a, b) => comparePaths(a.path, b.path));
   const errors: FieldError[] = sorted.map(({ issue, path }) => ({
     field: formatPath(path),

@@ -6,10 +6,12 @@ import { withErrorHandlingAndValidation } from "../errors/index.js";
 import { buildCloudInit } from "./buildCloudInit.js";
 import { buildFirewall } from "./buildFirewall.js";
 import {
+  CLUSTER_READY_TIMEOUT_MS,
   POLL_INTERVAL_MS,
   READY_TIMEOUT_MS,
   SHARED_KEY_NAME
 } from "./constants.js";
+import { parseDuration } from "./parseDuration.js";
 import { CancelledError, messageOf, ProvisionError } from "./errors.js";
 import { fingerprintOf } from "./fingerprintOf.js";
 import { type ProvisionOptions, provisionInputSchema } from "./infra.schema.js";
@@ -20,6 +22,7 @@ import type {
   DropletPlan,
   Now,
   Plan,
+  ProvisionedCluster,
   ProvisionedRun,
   RunResources,
   Sleep,
@@ -40,9 +43,13 @@ type ReadyDroplet = CreatedDroplet & { publicIp: string; privateIp: string };
 
 /**
  * Creates `provision(plan, { authorizedKeys })`. It creates, in this order,
- * the SSH key, the VPC, the UUT and load-generator droplets and the
- * firewall, then waits until both droplets are active and cloud-init has
- * finished (`cloud-init status --wait` over SSH), for at most 10 minutes.
+ * the SSH key, the VPC, the UUT and load-generator droplets, the DOKS
+ * cluster in the same VPC when the plan has one, and the firewall, then
+ * waits until both droplets are active and cloud-init has finished
+ * (`cloud-init status --wait` over SSH), for at most 10 minutes, and the
+ * cluster is running, for at most 20. With a cluster it opens the firewall
+ * to the cluster's node droplets and reads its kubeconfig, valid for
+ * `maxLifetime`.
  *
  * On any failure, or when `options.signal` aborts, it throws a
  * ProvisionError whose `created` lists what exists, for teardown. It never
@@ -150,6 +157,30 @@ export function createProvision(deps: ProvisionDeps) {
     await createDroplet(plan.uut, options.authorizedKeys);
     await createDroplet(plan.loadgen, []);
 
+    const clusterPlan = plan.cluster;
+    if (clusterPlan) {
+      const cluster = await step(
+        `could not create Kubernetes cluster ${clusterPlan.name} in ${plan.region}`,
+        () =>
+          deps.client.createKubernetesCluster({
+            name: clusterPlan.name,
+            region: plan.region,
+            version: clusterPlan.version,
+            vpc_uuid: vpc.id,
+            tags: plan.tags,
+            node_pools: [
+              {
+                name: `${clusterPlan.name}-pool`,
+                size: clusterPlan.size,
+                count: clusterPlan.nodes,
+                tags: plan.tags
+              }
+            ]
+          })
+      );
+      created.cluster = { id: cluster.id, name: cluster.name };
+    }
+
     const firewall = await step(
       `could not create firewall ${plan.resourceName}`,
       () =>
@@ -212,10 +243,78 @@ export function createProvision(deps: ProvisionDeps) {
       return waitCloudInit(droplet);
     };
 
-    const uut = await waitActive(0);
-    const loadgen = await waitActive(1);
-    await waitCloudInit(uut);
-    await waitCloudInit(loadgen);
+    const clusterDeadline = deps.now() + CLUSTER_READY_TIMEOUT_MS;
+    const waitCluster = async (): Promise<ProvisionedCluster> => {
+      const current = created.cluster!;
+      checkCancelled();
+      if (deps.now() >= clusterDeadline) {
+        throw fail(
+          `Kubernetes cluster ${current.name} was not running within 20 minutes`
+        );
+      }
+      const cluster = await step(
+        `could not read Kubernetes cluster ${current.name}`,
+        () => deps.client.getKubernetesCluster(current.id)
+      );
+      if (cluster.status.state === "error") {
+        throw fail(
+          `Kubernetes cluster ${current.name} failed: ${cluster.status.message ?? "state error"}`
+        );
+      }
+      const nodeIds = cluster.node_pools.flatMap((pool) =>
+        (pool.nodes ?? []).flatMap((node) =>
+          node.droplet_id ? [Number(node.droplet_id)] : []
+        )
+      );
+      const expected = cluster.node_pools.reduce(
+        (n, pool) => n + pool.count,
+        0
+      );
+      if (cluster.status.state !== "running" || nodeIds.length < expected) {
+        await deps.sleep(POLL_INTERVAL_MS, options.signal);
+        return waitCluster();
+      }
+      await step(`could not update firewall ${plan.resourceName}`, () =>
+        deps.client.updateFirewall(
+          firewall.id,
+          buildFirewall({
+            name: plan.resourceName,
+            vpcRange: vpc.ip_range,
+            sshSources: [plan.sshSource],
+            dropletIds: created.droplets.map(({ id }) => id),
+            clusterDropletIds: nodeIds
+          })
+        )
+      );
+      const kubeconfig = await step(
+        `could not read the kubeconfig of ${current.name}`,
+        () =>
+          deps.client.getKubeconfig(
+            current.id,
+            parseDuration(plan.maxLifetime) / 1000
+          )
+      );
+      return {
+        id: cluster.id,
+        name: cluster.name,
+        version: cluster.version,
+        size: clusterPlan!.size,
+        nodes: clusterPlan!.nodes,
+        kubeconfig
+      };
+    };
+
+    const droplets = async () => {
+      const uut = await waitActive(0);
+      const loadgen = await waitActive(1);
+      await waitCloudInit(uut);
+      await waitCloudInit(loadgen);
+      return { uut, loadgen };
+    };
+    const [{ uut, loadgen }, provisionedCluster] = await Promise.all([
+      droplets(),
+      created.cluster ? waitCluster() : Promise.resolve(undefined)
+    ]);
     checkCancelled();
 
     return {
@@ -225,7 +324,8 @@ export function createProvision(deps: ProvisionDeps) {
       firewall: created.firewall,
       uut,
       loadgen,
-      identity
+      identity,
+      ...(provisionedCluster ? { provisionedCluster } : {})
     };
   };
 

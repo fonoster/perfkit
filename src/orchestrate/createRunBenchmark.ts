@@ -160,8 +160,10 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const buildRoles = (entry: { ip: string; port: number } | null) =>
       buildSippRoles({
         benchmark,
+        runId: state.runId,
         uutIp: state.hosts.uutIp,
-        loadgenIp: cluster && onCluster ? cluster.sippIps.uac : state.hosts.loadgenIp,
+        loadgenIp:
+          cluster && onCluster ? cluster.sippIps.uac : state.hosts.loadgenIp,
         registerUsers,
         ...(entry ? { target: entry } : {}),
         ...(rate ? { cps: rate.cps } : {}),
@@ -206,7 +208,11 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     try {
       const entry = target
         ? (await startUut(benchmark, target, projectFile), null)
-        : await startCluster(benchmark, helm as HelmUutConfig["helm"], projectFile);
+        : await startCluster(
+            benchmark,
+            helm as HelmUutConfig["helm"],
+            projectFile
+          );
       const roles = buildRoles(entry);
       if (rate) deps.live?.rate?.(benchmark.id, rate.cps);
       await startSamplers(benchmark, rawDir, containers, lane.prefix);
@@ -280,8 +286,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   /**
    * Installs a helm benchmark's chart on the cluster as release `perfkit`
    * in the namespace named after the benchmark and returns where SIPp
-   * sends: the entry Service's load balancer (DigitalOcean) or the kind
-   * node's NodePort.
+   * sends: the entry Service's load balancer address (DigitalOcean's, or
+   * MetalLB's on kind) and its port.
    */
   async function startCluster(
     benchmark: BenchmarkConfig,
@@ -289,7 +295,6 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     projectFile: (file: string) => Promise<string>
   ): Promise<{ ip: string; port: number }> {
     const ns = benchmark.id;
-    const nodeIp = state.cluster?.nodeIp ?? null;
     const must = async (what: string, script: string, timeoutMs: number) => {
       const out = await kube(script, timeoutMs);
       if (out.code !== 0) {
@@ -352,8 +357,9 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       await deps.fs.mkdir(dirname(valuesFile));
       await deps.fs.writeFile(valuesFile, text);
     };
+    // Helm 4 applies server-side and needs --force-conflicts; Helm 3 lacks it.
     const upgrade = (extra: string[]) =>
-      shellJoin([
+      `${shellJoin([
         "helm",
         "upgrade",
         "--install",
@@ -365,10 +371,14 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         "-f",
         valuesFile,
         ...extra
-      ]);
+      ])} $(helm version --short 2>/dev/null | grep -q '^v4' && echo --force-conflicts)`;
 
     await writeValues(null);
-    await must("helm install failed", upgrade(["--timeout", "15m"]), 20 * 60 * 1000);
+    await must(
+      "helm install failed",
+      upgrade(["--timeout", "15m"]),
+      20 * 60 * 1000
+    );
     const entry = await poll(
       deps.now() + ENTRY_TIMEOUT_MS,
       async () => {
@@ -386,11 +396,11 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           60 * 1000
         );
         return out.code === 0
-          ? entryAddressOf(out.stdout, helm.entry.port, nodeIp)
+          ? entryAddressOf(out.stdout, helm.entry.port)
           : null;
       },
       () =>
-        `the entry Service ${helm.entry.service} of ${benchmark.id} had no ${nodeIp === null ? "load balancer address" : `NodePort for port ${helm.entry.port}`} within 10 minutes`
+        `the entry Service ${helm.entry.service} of ${benchmark.id} had no load balancer address for port ${helm.entry.port} within 10 minutes`
     );
     await deps.log(
       `[${benchmark.id}] entry ${helm.entry.service} at ${entry.ip}:${entry.port}`
@@ -410,13 +420,14 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         );
         return out.code === 0 && arePodsReady(out.stdout).ready ? true : null;
       },
-      () =>
-        `the pods of ${benchmark.id} were not all Ready within 5 minutes`
+      () => `the pods of ${benchmark.id} were not all Ready within 5 minutes`
     );
 
     if (helm.setup) {
-      const users = [benchmark.load.register?.users, benchmark.load.uac.users]
-        .filter((file): file is string => file !== undefined);
+      const users = [
+        benchmark.load.register?.users,
+        benchmark.load.uac.users
+      ].filter((file): file is string => file !== undefined);
       const setup = await kube(
         shellJoin(["bash", helm.setup, ns, ...users]),
         15 * 60 * 1000,
@@ -586,7 +597,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     registerUsers: number
   ): Promise<{ startedMs: number; aborted: string | null }> {
     const benchmarkId = benchmark.id;
-    const cluster = targetOf(benchmark) === "cluster" ? state.cluster : undefined;
+    const cluster =
+      targetOf(benchmark) === "cluster" ? state.cluster : undefined;
     const nofile =
       benchmark.load.transport === "tcp" ? SIPP_TCP_NOFILE : 1048576;
     const startRole = async (spec: SippRoleSpec) => {
@@ -780,8 +792,13 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   /** The cluster sampler's file as the UUT's sampler lines. */
   async function convertKubeSamples(rawDir: string) {
     const file = `${rawDir}/kube-uut.jsonl`;
-    const text = (await deps.fs.exists(file)) ? await deps.fs.readFile(file) : "";
-    await deps.fs.writeFile(`${rawDir}/sampler-uut.jsonl`, toKubeSamplerLines(text));
+    const text = (await deps.fs.exists(file))
+      ? await deps.fs.readFile(file)
+      : "";
+    await deps.fs.writeFile(
+      `${rawDir}/sampler-uut.jsonl`,
+      toKubeSamplerLines(text)
+    );
   }
 
   async function mergeHostFiles(rawDir: string) {

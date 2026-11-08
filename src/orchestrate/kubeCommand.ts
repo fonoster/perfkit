@@ -25,9 +25,7 @@ export function kubeCommand(
   return dockerRunCommand({
     runId: state.runId,
     image: KUBE_TOOLS_IMAGE,
-    ...(options.name
-      ? { name: options.name, detach: true }
-      : { rm: true }),
+    ...(options.name ? { name: options.name, detach: true } : { rm: true }),
     network: state.cluster?.network ?? "host",
     volumes: [`${state.root}:${state.root}`],
     ...(options.workdir ? { workdir: options.workdir } : {}),

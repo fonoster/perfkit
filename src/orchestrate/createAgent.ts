@@ -90,7 +90,10 @@ export function createAgent(deps: AgentDeps) {
       await save();
     };
 
-    const inOrder = <T>(items: readonly T[], each: (item: T) => Promise<void>) =>
+    const inOrder = <T>(
+      items: readonly T[],
+      each: (item: T) => Promise<void>
+    ) =>
       items.reduce(
         (previous, item) => previous.then(() => each(item)),
         Promise.resolve()
@@ -117,7 +120,9 @@ export function createAgent(deps: AgentDeps) {
       if (resolved) await deps.log(resolved.line);
       await step(
         benchmark,
-        resolved ? { cps: resolved.cps, rateSource: resolved.rateSource } : undefined
+        resolved
+          ? { cps: resolved.cps, rateSource: resolved.rateSource }
+          : undefined
       );
     };
     const soaks = state.plan.benchmarks.filter(
