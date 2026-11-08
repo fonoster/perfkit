@@ -40,6 +40,45 @@ describe("checkConfigPaths", () => {
     );
   });
 
+  it("should check a helm chart's Chart.yaml, values and setup, and a capacity benchmark's callees", async () => {
+    // Arrange
+    const raw = loadConfig();
+    raw.infra.cluster = { size: "c-8", nodes: 3 };
+    raw.benchmarks[0].uut = {
+      helm: {
+        chart: "../ops/charts/connect",
+        values: "k8s/values.yaml",
+        entry: { service: "routr-edgeport-tcp", port: 5060 },
+        setup: "k8s/seed.sh",
+        pods: [{ name: "edgeport", selector: "service=edgeport" }]
+      }
+    };
+    raw.benchmarks[0].load.register = {
+      scenario: "one-soak/uac_register.xml",
+      users: "one-soak/missing.csv"
+    };
+    const helm = perfkitConfigSchema.parse(raw);
+    const isFile = sinon
+      .stub()
+      .callsFake(async (path: string) => !path.endsWith("missing.csv"));
+
+    // Act
+    const errors = await checkConfigPaths(helm, "/repo/perf", isFile);
+
+    // Assert
+    expect(isFile.args.map(([path]) => path).slice(1, 4)).to.deep.equal([
+      "/repo/ops/charts/connect/Chart.yaml",
+      "/repo/perf/k8s/values.yaml",
+      "/repo/perf/k8s/seed.sh"
+    ]);
+    expect(errors).to.deep.equal([
+      {
+        path: "benchmarks[0].load.register.users",
+        message: "file not found: one-soak/missing.csv"
+      }
+    ]);
+  });
+
   it("should check project.favicon when it is set", async () => {
     // Arrange
     const withFavicon = perfkitConfigSchema.parse({
