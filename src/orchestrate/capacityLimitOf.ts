@@ -22,7 +22,10 @@ export interface CapacityLimit {
  */
 export function capacityLimitOf(
   result: BenchmarkResult | null,
-  thresholds: CapacityBenchmarkConfig["thresholds"]
+  thresholds: Pick<
+    CapacityBenchmarkConfig["thresholds"],
+    "p99LatencyMs" | "failedCallsPct"
+  >
 ): CapacityLimit | null {
   if (result === null || result.kind !== "capacity") return null;
   if (result.verdict === "passed") {
@@ -39,9 +42,10 @@ export function capacityLimitOf(
   const measured = invalid === -1 ? steps : steps.slice(0, invalid);
   const passed = measured.every(
     (step) =>
-      step.p99Ms < thresholds.p99LatencyMs &&
-      (step.calls > 0 ? (step.failed / step.calls) * 100 : 0) <
-        thresholds.failedCallsPct
+      step.spike === true ||
+      (step.p99Ms < thresholds.p99LatencyMs &&
+        (step.calls > 0 ? (step.failed / step.calls) * 100 : 0) <
+          thresholds.failedCallsPct)
   );
   const last = measured.at(-1);
   return passed && last ? { cps: last.offeredCps, lowerBound: true } : null;

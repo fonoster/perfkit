@@ -475,4 +475,108 @@ describe("createAnalyzeCapacity", () => {
       expect(error.message).to.include("no SIPp -trace_stat file");
     });
   });
+  describe("spike tolerance (confirmSteps)", () => {
+    const slow = latenciesWithP99(80);
+
+    it("should treat a rule break followed by a pass as a spike and go on", async () => {
+      // Act
+      const result = measured(
+        await analyze(
+          [
+            { offeredCps: 50 },
+            { offeredCps: 100, latencies: slow },
+            { offeredCps: 150 },
+            { offeredCps: 200 }
+          ],
+          capacityConfig({ confirmSteps: 2 })
+        )
+      );
+
+      // Assert
+      expect(result.verdict).to.equal("passed");
+      expect(result.headline.limitCps).to.equal(200);
+      expect(result.headline.limitIsLowerBound).to.equal(true);
+      expect(result.stoppedBy).to.equal(null);
+      expect(result.series.steps.map((step) => step.spike)).to.deep.equal([
+        undefined,
+        true,
+        undefined,
+        undefined
+      ]);
+    });
+
+    it("should end the ramp at the first of two steps in a row that break a rule", async () => {
+      // Act
+      const result = measured(
+        await analyze(
+          [
+            { offeredCps: 50 },
+            { offeredCps: 100 },
+            { offeredCps: 150, latencies: slow },
+            { offeredCps: 200, latencies: slow }
+          ],
+          capacityConfig({ confirmSteps: 2 })
+        )
+      );
+
+      // Assert
+      expect(result.headline.limitCps).to.equal(100);
+      expect(result.headline.limitIsLowerBound).to.equal(false);
+      expect(result.stoppedBy).to.include({
+        offeredCps: 150,
+        rule: "p99LatencyMs"
+      });
+      expect(result.series.steps.some((step) => step.spike)).to.equal(false);
+    });
+
+    it("should count a break on the last step as confirmed", async () => {
+      // Act
+      const result = measured(
+        await analyze(
+          [
+            { offeredCps: 50 },
+            { offeredCps: 100 },
+            { offeredCps: 150, latencies: slow }
+          ],
+          capacityConfig({ confirmSteps: 2 })
+        )
+      );
+
+      // Assert
+      expect(result.headline.limitCps).to.equal(100);
+      expect(result.stoppedBy).to.include({ offeredCps: 150 });
+    });
+
+    it("should end the ramp at the old first break with confirmSteps 1", async () => {
+      // Act
+      const result = measured(
+        await analyze(
+          [
+            { offeredCps: 50 },
+            { offeredCps: 100, latencies: slow },
+            { offeredCps: 150 }
+          ],
+          capacityConfig({ confirmSteps: 1 })
+        )
+      );
+
+      // Assert
+      expect(result.headline.limitCps).to.equal(50);
+    });
+
+    it("should stay inconclusive when the load generator gives out after a spike", async () => {
+      // Act
+      const result = await analyze(
+        [
+          { offeredCps: 50 },
+          { offeredCps: 100, latencies: slow },
+          { offeredCps: 150, sippCpuPct: 93 }
+        ],
+        capacityConfig({ confirmSteps: 2 })
+      );
+
+      // Assert
+      expect(result.verdict).to.equal("inconclusive");
+    });
+  });
 });

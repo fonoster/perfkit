@@ -86,7 +86,7 @@ async function routrWithCapacityCallees(): Promise<string> {
       uas: { scenario: one-soak/uas_answer.xml }
       uac: { scenario: edgeport-echo/uac_message.xml }
       rate: { start: 50, step: 50, every: 60s, max: 200 }
-    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1 }
+    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1, confirmSteps: 1 }
 `
   );
   return join(dir, "perfkit.yaml");
@@ -107,6 +107,24 @@ function capacityWithRegistrations(registered: number) {
 const agentCommands = (setup: Awaited<ReturnType<typeof doSetup>>) =>
   setup.hosts.commands.filter(({ by }) => by === "agent");
 
+/** A copy of the minimal example whose capacity thresholds carry `extra`. */
+async function minimalWithThresholds(extra: string): Promise<string[]> {
+  const dir = await mkdtemp(join(tmpdir(), "perfkit-thresholds-"));
+  await cp(dirname(MINIMAL_CONFIG), dir, { recursive: true });
+  const config = join(dir, "perfkit.yaml");
+  const yaml = await readFile(config, "utf8");
+  await writeFile(
+    config,
+    yaml
+      .replace(
+        "thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1 }",
+        `thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1, ${extra} }`
+      )
+      .replace("max: 200", "max: 300")
+  );
+  return ["run", "--config", config, "--target-version", "3.7.3"];
+}
+
 describe("createAgent", () => {
   it("should stop SIPp right after the first step that breaks a rule and start no next step", async () => {
     // Arrange
@@ -116,7 +134,10 @@ describe("createAgent", () => {
       { offeredCps: 150 },
       { offeredCps: 200 }
     ];
-    const setup = await detached(MINIMAL, capacityRaw(steps));
+    const setup = await detached(
+      await minimalWithThresholds("confirmSteps: 1"),
+      capacityRaw(steps)
+    );
     const progress = join(setup.hosts.roots.loadgen, "progress.log");
 
     // Act
@@ -144,6 +165,36 @@ describe("createAgent", () => {
     expect(setup.agent.clock.now - START_MS).to.be.lessThan(
       2 * 60 * 1000 + 12 * 1000
     );
+  });
+
+  it("should go on after a spike and stop when the next step breaks a rule too", async () => {
+    // Arrange: step 100 is slow but step 150 passes (a spike); 200 and 250 are slow
+    const steps = [
+      { offeredCps: 50 },
+      { offeredCps: 100, latencies: latenciesWithP99(80) },
+      { offeredCps: 150 },
+      { offeredCps: 200, latencies: latenciesWithP99(80) },
+      { offeredCps: 250, latencies: latenciesWithP99(80) },
+      { offeredCps: 300 }
+    ];
+    const setup = await detached(
+      await minimalWithThresholds("confirmSteps: 2"),
+      capacityRaw(steps)
+    );
+
+    // Act
+    await setup.agent.run(setup.runId());
+
+    // Assert
+    const progress = join(setup.hosts.roots.loadgen, "progress.log");
+    const lines = (await readFile(progress, "utf8")).trim().split("\n");
+    expect(lines).to.deep.equal([
+      "[sipp-uas] step    50 messages/s  p99 5.0 ms  failed 0.00%  ok",
+      "[sipp-uas] step   100 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; a spike unless the next step breaks too",
+      "[sipp-uas] step   150 messages/s  p99 5.0 ms  failed 0.00%  ok",
+      "[sipp-uas] step   200 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; a spike unless the next step breaks too",
+      "[sipp-uas] step   250 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; stopping"
+    ]);
   });
 
   it("should leave a capacity warm-up out of the first step, live and in the final verdict", async () => {

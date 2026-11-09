@@ -60,6 +60,7 @@ export function capacityConfig(
   overrides: {
     p99LatencyMs?: number;
     failedCallsPct?: number;
+    confirmSteps?: number;
     max?: number;
   } = {},
   extra: Record<string, unknown> = {}
@@ -85,7 +86,8 @@ export function capacityConfig(
     },
     thresholds: {
       p99LatencyMs: overrides.p99LatencyMs ?? 50,
-      failedCallsPct: overrides.failedCallsPct ?? 0.1
+      failedCallsPct: overrides.failedCallsPct ?? 0.1,
+      confirmSteps: overrides.confirmSteps ?? 1
     },
     ...extra
   });

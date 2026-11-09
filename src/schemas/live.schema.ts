@@ -78,7 +78,8 @@ export const liveCapacitySchema = z.strictObject({
   }),
   thresholds: z.strictObject({
     p99LatencyMs: positiveNumber,
-    failedCallsPct: nonNegativeNumber
+    failedCallsPct: nonNegativeNumber,
+    confirmSteps: positiveNumber.int().optional()
   }),
   /** The step SIPp is offering now, while running; else null. */
   current: z

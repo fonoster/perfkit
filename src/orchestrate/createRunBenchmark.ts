@@ -785,7 +785,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const everyMs = durationToSeconds(every) * 1000;
     const total = Math.floor((max - start) / step) + 1;
     const runStep = async (
-      index: number
+      index: number,
+      priorBreaks: number
     ): Promise<{ steps: number; aborted: string | null }> => {
       const ok = await waitUntil(
         startedMs + (index + 1) * everyMs + STEP_GRACE_MS
@@ -796,16 +797,18 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         rawDir,
         benchmark,
         index,
-        startMs: startedMs
+        startMs: startedMs,
+        priorBreaks,
+        lastStep: index + 1 >= total
       });
       await deps.log(evaluation.line);
       if (evaluation.point) deps.live?.point(benchmark.id, evaluation.point);
       if (evaluation.stop || index + 1 >= total) {
         return { steps: index + 1, aborted: null };
       }
-      return runStep(index + 1);
+      return runStep(index + 1, evaluation.broken ? priorBreaks + 1 : 0);
     };
-    return runStep(0);
+    return runStep(0, 0);
   }
 
   async function collectUutFiles(rawDir: string) {

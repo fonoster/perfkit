@@ -27,6 +27,7 @@ import { parseUdpJsonl } from "./parseUdpJsonl.js";
 import { capacityMetaSchema } from "./rawResults.schema.js";
 import { readRawFile } from "./readRawFile.js";
 import { readSippResults } from "./readSippResults.js";
+import { findRampEnd } from "./findRampEnd.js";
 import { roundTo } from "./roundTo.js";
 import { toResources } from "./toResources.js";
 import type { AnalyzeDeps } from "./types.js";
@@ -38,7 +39,8 @@ import type { AnalyzeDeps } from "./types.js";
  * Steps are checked in order. A step whose measurement does not count (the
  * load generator saturated) makes the verdict inconclusive. Otherwise a step
  * passes when p99 < p99LatencyMs and failed % < failedCallsPct, both strict;
- * the first step that breaks a rule ends the ramp. The limit is the offered
+ * the ramp ends where `thresholds.confirmSteps` steps in a row break a rule
+ * (a shorter run followed by a pass is a spike, flagged in the series). The limit is the offered
  * rate of the last step that passed, and the rules are reported at it, or at
  * the first step when none passed. When no step broke a rule the limit is a
  * lower bound.
@@ -114,15 +116,22 @@ export function createAnalyzeCapacity(deps: AnalyzeDeps) {
       durationS: meta.durationS,
       tool: meta.tool
     };
-    const series = { steps: measured.map(({ step }) => step) };
     const resources = toResources(samples, uutProcesses);
 
-    // The ramp ends at the first step that is invalid or breaks a rule.
-    const endIndex = measured.findIndex(
-      (step) =>
-        step.invalidReason !== null ||
-        rulesOf(step).some((rule) => !rule.passed)
+    // The ramp ends at the first invalid step, or where confirmSteps steps in
+    // a row break a rule; a shorter run followed by a pass is a spike
+    const { endIndex, spikes } = findRampEnd(
+      measured.map((step) => ({
+        valid: step.invalidReason === null,
+        broken: rulesOf(step).some((rule) => !rule.passed)
+      })),
+      benchmark.thresholds.confirmSteps
     );
+    const series = {
+      steps: measured.map(({ step }, index) =>
+        spikes.includes(index) ? { ...step, spike: true } : step
+      )
+    };
     const end = endIndex === -1 ? undefined : measured[endIndex];
     if (end?.invalidReason) {
       return {

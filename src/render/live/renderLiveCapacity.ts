@@ -46,7 +46,8 @@ export function renderLiveCapacity(
     uutCpuPct: 0,
     loadgenUdpDrops: 0,
     uutUdpDrops: 0,
-    valid: point.ok || point.stopReason === null
+    valid: point.ok || point.stopReason === null,
+    ...(!point.ok && point.stopReason === null ? { spike: true } : {})
   }));
   const done = benchmark.state === "done";
   const held = benchmark.heldCps;
@@ -75,6 +76,11 @@ export function renderLiveCapacity(
   });
 
   const passed = benchmark.points.filter((p) => p.ok).length;
+  const spikes = steps.filter((s) => s.spike).length;
+  const spikeNote =
+    spikes === 0
+      ? ""
+      : ` ${spikes} ${spikes === 1 ? "step broke a rule" : "steps broke a rule"} but the next one passed: a spike, not the limit.`;
   const value = done
     ? held === null
       ? "No step held"
@@ -84,9 +90,9 @@ export function renderLiveCapacity(
       : `Held ${rateOf(held)} so far`;
   const sentence = done
     ? benchmark.result?.stopReason
-      ? `The ramp stopped at ${rateOf(benchmark.points.find((p) => !p.ok)?.offeredCps ?? 0)}: ${benchmark.result.stopReason}. The verdict comes from the full analysis when the run is collected.`
-      : "Every step passed up to the highest rate offered. The verdict comes from the full analysis when the run is collected."
-    : `${passed === 0 ? "No step has finished yet." : `${passed} ${passed === 1 ? "step" : "steps"} passed both rules.`} The limit is the last step that passes before one fails; it is not known until the ramp stops.`;
+      ? `The ramp stopped at ${rateOf(benchmark.points.find((p) => !p.ok && p.stopReason !== null)?.offeredCps ?? 0)}: ${benchmark.result.stopReason}. The verdict comes from the full analysis when the run is collected.`
+      : `Every step passed up to the highest rate offered.${spikeNote} The verdict comes from the full analysis when the run is collected.`
+    : `${passed === 0 ? "No step has finished yet." : `${passed} ${passed === 1 ? "step" : "steps"} passed both rules.`}${spikeNote} The limit is the last step that passes before the ramp stops; it is not known until then.`;
   const last = lastPublishedLimit(ctx.runs, benchmark.id, ctx.live.runId);
   const baseline = last
     ? `Last published result: ${rateOf(last.limitCps)} on v${last.version}.${

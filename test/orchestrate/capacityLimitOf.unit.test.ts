@@ -66,6 +66,19 @@ describe("capacityLimitOf", () => {
     });
   });
 
+  it("should not count a spike step as a rule break before the invalid one", () => {
+    const result = inconclusive([
+      step(100),
+      step(200, { p99Ms: 500, spike: true }),
+      step(300),
+      step(400, { valid: false, achievedCps: 300 })
+    ]);
+    expect(capacityLimitOf(result, THRESHOLDS)).to.deep.equal({
+      cps: 300,
+      lowerBound: true
+    });
+  });
+
   it("should give no limit when a step before the invalid one broke a rule, or the first step is invalid", () => {
     expect(
       capacityLimitOf(

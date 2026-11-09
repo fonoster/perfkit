@@ -518,6 +518,12 @@
                     "type": "number",
                     "minimum": 0,
                     "maximum": 100
+                  },
+                  "confirmSteps": {
+                    "default": 2,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
                   }
                 },
                 "required": [

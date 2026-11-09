@@ -292,7 +292,9 @@ const percentSchema = nonNegativeNumber.max(100, {
 
 const capacityThresholdsSchema = z.strictObject({
   p99LatencyMs: positiveNumber,
-  failedCallsPct: percentSchema
+  failedCallsPct: percentSchema,
+  /** How many steps in a row must break a rule to end the ramp; 1 ends it at the first. */
+  confirmSteps: z.number().int().min(1).max(5).default(2)
 });
 
 const soakThresholdsSchema = z.strictObject({

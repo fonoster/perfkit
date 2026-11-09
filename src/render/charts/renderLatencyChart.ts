@@ -128,14 +128,14 @@ ${live ? liveRegion(live, steps, sx) : ""}${overLimit}${threshold}${lines}${limi
   const rows = steps
     .map(
       (s) =>
-        `<tr><td>${formatNumber(s.offeredCps)}</td><td>${formatNumber(s.achievedCps)}</td><td>${formatNumber(s.p50Ms)}</td><td>${formatNumber(s.p95Ms)}</td><td>${formatNumber(s.p99Ms)}</td><td>${formatPct(s.calls === 0 ? 0 : (s.failed / s.calls) * 100)}</td><td>${s.valid ? "yes" : "no"}</td></tr>`
+        `<tr><td>${formatNumber(s.offeredCps)}</td><td>${formatNumber(s.achievedCps)}</td><td>${formatNumber(s.p50Ms)}</td><td>${formatNumber(s.p95Ms)}</td><td>${formatNumber(s.p99Ms)}</td><td>${formatPct(s.calls === 0 ? 0 : (s.failed / s.calls) * 100)}</td><td>${s.spike ? "spike" : s.valid ? "yes" : "no"}</td></tr>`
     )
     .join("");
 
   return `<figure class="card card-surface chart-card">
 <div class="chart-head">
 <div><h3 class="card-title">Latency as load rises</h3><p class="card-sub">request to 200 OK, by offered rate</p></div>
-<div class="chart-head-side">${input.partial ? '<span class="tag">Partial</span>' : ""}<ul class="legend">${legend}</ul></div>
+<div class="chart-head-side">${input.partial ? '<span class="tag">Partial</span>' : ""}${steps.some((s) => s.spike) ? `<span class="tag" title="A step that broke a rule while the next one passed">${steps.filter((s) => s.spike).length} ${steps.filter((s) => s.spike).length === 1 ? "spike" : "spikes"}</span>` : ""}<ul class="legend">${legend}</ul></div>
 </div>
 <div class="scroll-x chart-scroll" tabindex="0" role="group" aria-label="Latency chart, scrolls sideways">${svg}</div>
 <p class="scroll-hint" aria-hidden="true">&larr; chart scrolls sideways &rarr;</p>
