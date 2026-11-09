@@ -20,16 +20,24 @@ infra:
 ```
 
 - `count` droplets, tagged like the load generator today; one is the primary (it runs the
-  agent, the samplers' collection and the callees), the others are workers.
+  agent and the samplers' collection), the others are workers.
 - Each worker runs its share of the uac: `instances` and the rate are per worker, so a
   benchmark offers `count × rate`. The users file is split across all `count × instances`
   processes.
 - Raw results: every worker's trace files are copied into the benchmark's raw directory
   (distinct names, as SIPp's pid already makes them), and `readSippResults` already merges
-  every pid. The sampler runs on each worker and writes `sampler-loadgen-<n>.jsonl`; the
-  analysis names processes `sipp-uac@<n>` so saturation is judged per process.
-- The callees (register and uas) stay on the primary: Routr routes a call to the address of the
-  REGISTER's top Via.
+  every pid. The sampler runs on each worker and writes `sampler-worker-<n>.jsonl` and
+  `udp-worker-<n>.jsonl`, copied back with the rest; process names are one per instance
+  (`sipp-uac-3`, `sipp-register-2`), so saturation is judged per process on any machine,
+  and UDP drops on any machine invalidate the step. The report's `run.infra.loadgen.count`
+  says how many droplets there were.
+- The callees (register and uas) are split like the uac: `instances` callee processes, each
+  registering its share of the users (round robin) from its own port and address, spread over
+  the load generators. Routr routes a call to the address of the REGISTER's top Via, so it goes
+  to the callee that registered the user. Before the ramp every callee must have registered its
+  share, or the benchmark aborts (`callee 2 registered 10 of 67 ...`). One callee process tops
+  out near 2,900 calls/s over UDP (about 17,000 messages/s), which capped RoutrOne's first
+  full run.
 
 ## What it touches
 

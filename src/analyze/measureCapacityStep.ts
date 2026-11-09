@@ -41,8 +41,29 @@ export function uacProcessNames(instances: number): string[] {
     uacProcessName(index + 1)
   );
 }
-/** The callee SIPp processes, checked against the same 80%. */
+/** The callee SIPp processes of one instance, checked against the same 80%. */
 export const SIPP_CALLEE_PROCESSES = ["sipp-register", "sipp-uas"] as const;
+
+/**
+ * The sampler's name for one callee instance of a role (`register` or
+ * `uas`): `sipp-register` for the first, `sipp-register-2` and on for the
+ * others.
+ */
+export function calleeProcessName(
+  role: "register" | "uas",
+  instance: number
+): string {
+  return instance > 1 ? `sipp-${role}-${instance}` : `sipp-${role}`;
+}
+
+/** The sampler names of the callee processes of `instances` callee instances. */
+export function calleeProcessNames(instances: number): string[] {
+  return Array.from({ length: Math.max(1, instances) }, (_, index) =>
+    (["register", "uas"] as const).map((role) =>
+      calleeProcessName(role, index + 1)
+    )
+  ).flat();
+}
 
 export interface StepInput {
   offeredCps: number;
@@ -53,6 +74,8 @@ export interface StepInput {
   uutProcesses: readonly string[];
   /** The uac SIPp processes' sampler names; just `sipp-uac` by default. */
   uacProcesses?: readonly string[];
+  /** The callee SIPp processes' sampler names; `sipp-register` and `sipp-uas` by default. */
+  calleeProcesses?: readonly string[];
   unit: string;
 }
 
@@ -86,7 +109,7 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
   const instanceCpu = (input.uacProcesses ?? [SIPP_UAC_PROCESS]).map(
     (name) => ({
       name,
-      cpuPct: cpuPctOver(processSamples(input.samples, "loadgen", name), window)
+      cpuPct: cpuPctOver(loadgenSamples(input.samples, name), window)
     })
   );
   const busiest = instanceCpu.reduce((top, one) =>
@@ -102,11 +125,18 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
       0
     )
   );
-  const callee = SIPP_CALLEE_PROCESSES.map((name) => ({
-    name,
-    cpuPct: cpuPctOver(processSamples(input.samples, "loadgen", name), window)
-  })).find(({ cpuPct }) => cpuPct > MAX_SIPP_CPU_PCT);
-  const loadgenUdpDrops = udpDropsOver(input.udp, "loadgen", window);
+  const callee = (input.calleeProcesses ?? SIPP_CALLEE_PROCESSES)
+    .map((name) => ({
+      name,
+      cpuPct: cpuPctOver(loadgenSamples(input.samples, name), window)
+    }))
+    .find(({ cpuPct }) => cpuPct > MAX_SIPP_CPU_PCT);
+  // Every load generator counts: a worker that drops packets spoils the step too
+  const loadgenUdpDrops = [
+    ...new Set(
+      input.udp.map(({ host }) => host).filter((host) => host !== "uut")
+    )
+  ].reduce((sum, host) => sum + udpDropsOver(input.udp, host, window), 0);
   const uutUdpDrops = udpDropsOver(input.udp, "uut", window);
   const rate = `${formatNumber(offeredCps)} ${input.unit}/s`;
   const invalidReason =
@@ -141,6 +171,20 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
       valid: invalidReason === null
     }
   };
+}
+
+/**
+ * A load generator process's samples, from whichever load generator runs it:
+ * the process names (`sipp-uac-3`, `sipp-register-2`) are one per instance,
+ * so no two machines share one.
+ */
+function loadgenSamples(
+  samples: readonly ProcessSample[],
+  name: string
+): ProcessSample[] {
+  return samples.filter(
+    (sample) => sample.host !== "uut" && sample.name === name
+  );
 }
 
 function processSamples(

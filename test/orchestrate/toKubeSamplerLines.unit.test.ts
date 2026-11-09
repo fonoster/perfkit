@@ -86,6 +86,28 @@ describe("toKubeSamplerLines", () => {
     expect(countRestarts(samples, ["edgeport"])).to.equal(1);
   });
 
+  it("should count a pod that replaced another as a restart", () => {
+    // Arrange: pod a is gone at 20 s and a new pod (a new uid) takes its place
+    const text = [
+      line(0, [{ pod: "a", uid: "u1", restarts: 0, cpu: "1m", mem: "1Ki" }]),
+      line(10, [{ pod: "a", uid: "u1", restarts: 0, cpu: "1m", mem: "1Ki" }]),
+      line(20, [{ pod: "b", uid: "u2", restarts: 0, cpu: "1m", mem: "1Ki" }]),
+      line(30, [{ pod: "b", uid: "u2", restarts: 0, cpu: "1m", mem: "1Ki" }])
+    ].join("\n");
+
+    // Act
+    const samples = parseSamplerJsonl(
+      toKubeSamplerLines(text),
+      "sampler.jsonl"
+    );
+
+    // Assert
+    expect(samples.map(({ pid }) => pid)).to.deep.equal([1, 1, 2, 2]);
+    expect(
+      countRestarts(samples, ["edgeport"], { fromCounters: true })
+    ).to.equal(1);
+  });
+
   it("should give no line for a tick without usage, and skip a half-written last line", () => {
     // Arrange
     const text = [

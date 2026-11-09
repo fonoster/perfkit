@@ -37,7 +37,8 @@ interface NameState {
  * memory is the pods' working set summed (`rssKB`); CPU is their usage
  * summed and integrated over time into `cpuTicks` at 100 ticks/s, so CPU %
  * over a window comes out as on the server; `pid` is 1 plus the restarts of
- * the name's containers seen so far, so a restart reads as one; `fds` is 0.
+ * the name's containers seen so far (a replaced pod counts as one), so a
+ * restart reads as a rise; `fds` is 0.
  * A tick with no pod, no usage yet or a line that does not parse (the last
  * one, half written) gives no line.
  */
@@ -67,8 +68,14 @@ export function toKubeSamplerLines(text: string): string {
       const first = state.lastMs === null;
       line.pods.forEach(({ uid, restarts }) => {
         const before = state.seen.get(uid);
+        // A pod that was not there before is a replacement: one restart, or
+        // more when its own containers had restarted too.
         const added =
-          before === undefined ? (first ? 0 : restarts) : restarts - before;
+          before === undefined
+            ? first
+              ? 0
+              : Math.max(1, restarts)
+            : restarts - before;
         state.restarts += Math.max(0, added);
         state.seen.set(uid, restarts);
       });

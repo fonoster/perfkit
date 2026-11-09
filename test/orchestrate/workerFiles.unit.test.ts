@@ -46,6 +46,17 @@ describe("workerFileName", () => {
     );
   });
 
+  it("should keep a worker's sampler files under their own name and skip the other files", () => {
+    expect(workerFileName(1, "sampler-worker-1.jsonl")).to.equal(
+      "sampler-worker-1.jsonl"
+    );
+    expect(workerFileName(2, "udp-worker-2.jsonl")).to.equal(
+      "udp-worker-2.jsonl"
+    );
+    expect(workerFileName(1, "sampler-worker-1.spec")).to.equal(null);
+    expect(workerFileName(1, "users-uac-2.csv")).to.equal(null);
+  });
+
   it("should never collide with a pid of the load generator itself", () => {
     // A Linux pid has at most 7 digits; a renamed one has 9 or more
     const pid = (name: string) => /_(\d+)_/.exec(name)![1]!;

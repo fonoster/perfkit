@@ -64,7 +64,10 @@ export function buildReport(
         loadgen: {
           size: local ? "local" : plan.loadgen.size,
           vcpus: state.machines.loadgen.vcpus,
-          memoryMB: state.machines.loadgen.memoryMB
+          memoryMB: state.machines.loadgen.memoryMB,
+          ...(state.hosts.workers.length > 0
+            ? { count: state.hosts.workers.length + 1 }
+            : {})
         },
         os: state.machines.uut.os,
         docker: state.machines.uut.docker,

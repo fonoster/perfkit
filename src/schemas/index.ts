@@ -25,6 +25,7 @@ export {
   type SoakRateConfig,
   type UutConfig
 } from "./perfkitConfig.schema.js";
+export { calleeInstancesOf } from "./calleeInstancesOf.js";
 export { isHelmUut } from "./isHelmUut.js";
 export { targetOf, type BenchmarkTarget } from "./targetOf.js";
 export { uutProcessNames } from "./uutProcessNames.js";

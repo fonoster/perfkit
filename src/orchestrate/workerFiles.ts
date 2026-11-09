@@ -16,10 +16,12 @@ export function generatorOf(instance: number, workers: number): Host {
  * The name a worker's SIPp file gets in the run's raw directory. SIPp names
  * its files after its pid (`<scenario>_<pid>_<what>`), which two machines can
  * share, so the worker's number goes in front of the pid, padded past any
- * real one: worker 1's pid 4242 becomes 100004242. Null for a file that is
- * not SIPp's (the users shares).
+ * real one: worker 1's pid 4242 becomes 100004242. A worker's sampler files
+ * (`sampler-worker-1.jsonl`, `udp-worker-1.jsonl`) already carry its name and
+ * keep it. Null for any other file (the users shares, the sampler's spec).
  */
 export function workerFileName(worker: number, name: string): string | null {
+  if (/^(sampler|udp)-worker-\d+\.jsonl$/.test(name)) return name;
   const match = /^(.+)_(\d+)_(.*)$/.exec(name);
   if (!match) return null;
   const [, base, pid, rest] = match;

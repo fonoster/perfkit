@@ -12,11 +12,11 @@ import type { PageContext } from "../types.js";
  */
 export function renderSetup(ctx: PageContext): string {
   const { run } = ctx.report;
-  const machine = (m: typeof run.infra.uut) =>
-    `${m.size} · ${m.vcpus} vCPU · ${formatNumber(m.memoryMB / 1024)} GB`;
+  const machine = (m: typeof run.infra.uut, count = 1) =>
+    `${count > 1 ? `${count} × ` : ""}${m.size} · ${m.vcpus} vCPU · ${formatNumber(m.memoryMB / 1024)} GB`;
   const servers: Array<[string, string]> = [
     ["Server under test", machine(run.infra.uut)],
-    ["Load generator", machine(run.infra.loadgen)],
+    ["Load generator", machine(run.infra.loadgen, run.infra.loadgen.count)],
     ["Region", `DigitalOcean ${run.infra.region}`],
     ["OS", `${run.infra.os} · Docker ${run.infra.docker}`]
   ];

@@ -30,6 +30,8 @@ export { durationToSeconds } from "./durationToSeconds.js";
 export { leastSquaresSlope } from "./leastSquaresSlope.js";
 export { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
 export {
+  calleeProcessName,
+  calleeProcessNames,
   MAX_SIPP_CPU_PCT,
   measureCapacityStep,
   MIN_ACHIEVED_RATIO,

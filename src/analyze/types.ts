@@ -62,11 +62,17 @@ export interface SippResults {
   calls: Call[];
 }
 
+/**
+ * A host of the sampler's files: the unit under test, the first load
+ * generator, or one of the other load generators (`worker-1`, ...).
+ */
+export type SamplerHost = "uut" | "loadgen" | `worker-${number}`;
+
 /** One sampler reading of one process name, with duplicates summed. */
 export interface ProcessSample {
   t: string;
   tMs: number;
-  host: "uut" | "loadgen";
+  host: SamplerHost;
   name: string;
   pid: number;
   rssKB: number;
@@ -78,7 +84,7 @@ export interface ProcessSample {
 /** One UDP counters reading. `drops` is RcvbufErrors + SndbufErrors. */
 export interface UdpSample {
   tMs: number;
-  host: "uut" | "loadgen";
+  host: SamplerHost;
   drops: number;
 }
 

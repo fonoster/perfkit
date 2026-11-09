@@ -84,16 +84,17 @@ Breaking (a major release):
   60,000 source ports, about `cps × (hold + TIME_WAIT)`.
 - SIPp names its result files after its pid (`<scenario>_<pid>_<what>`); the files of another
   load generator get their worker number in front of the pid so two machines never collide.
-- Routr routes a call to the address in the top Via of the callee's REGISTER, so the callees
-  always run on the first load generator.
+- Routr routes a call to the address in the top Via of the callee's REGISTER, so each callee
+  process registers its own share of the users from its own address and port, and calls reach
+  the process that holds the user.
 
 ### performance-engineer
 
 - SIPp is single-threaded: about 350 calls/s per process over TCP, so a bigger load generator
   needs more `load.instances`, not more cores per process.
 - A capacity step is invalid when a SIPp process uses more than 80% of a core or the placed
-  rate is outside 95% to 105% of the offered one. The sampler watches the first load
-  generator's SIPp processes only, not the workers'.
+  rate is outside 95% to 105% of the offered one. Every load generator runs a sampler, and
+  the callees count too (one per instance).
 
 ### release-engineer
 
@@ -118,5 +119,6 @@ Breaking (a major release):
 - 2026-11-09: Every benchmark runs the same load generator layout so results compare:
   `load.instances` is the total SIPp uac processes, spread round robin over the load
   generators (two smaller droplets rather than one big one); benchmarks use 2, the Kubernetes
-  ones 8. The agent and the callees stay on the first; the others only run uac and take
-  commands over SSH.
+  ones 8. The agent stays on the first; the others only run SIPp (uac and callees) and take
+  commands over SSH. There are as many callee processes as instances, each with its share of
+  the users.

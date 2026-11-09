@@ -41,6 +41,29 @@ describe("the report page", () => {
     });
   });
 
+  describe("given a report with several load generators", () => {
+    it("should list their count in the test setup", async () => {
+      // Arrange
+      const report = loadReport("passed") as {
+        run: { infra: { loadgen: Record<string, unknown> } };
+      };
+      report.run.infra.loadgen.count = 2;
+      const site = await renderSite(report, loadHistory(RUNS_4));
+      const single = await renderSite(
+        loadReport("passed"),
+        loadHistory(RUNS_4)
+      );
+
+      // Act
+      const setup = textOf(site.latest(), ".setup");
+      const alone = textOf(single.latest(), ".setup");
+
+      // Assert
+      expect(setup).to.match(/Load generator\s*2 × /);
+      expect(alone).to.not.match(/Load generator\s*\d+ × /);
+    });
+  });
+
   describe("given the passed fixture with history", () => {
     it("should show the verdict, two Passed pills, the date chip and the takeaway", async () => {
       // Arrange

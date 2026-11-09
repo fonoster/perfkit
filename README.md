@@ -8,10 +8,10 @@ report page.
 perfkit benchmarks Fonoster projects (Routr first, then Roomr and Fonoster) the same way and
 publishes the results in one format.
 
-- **Two droplets per run.** Each run creates two dedicated-CPU DigitalOcean droplets in the same
-  region and private VPC: the unit under test, and a load generator that drives it with SIPp.
-  The images are pinned by digest when the run starts, and both droplets are deleted on every
-  exit path.
+- **A unit under test and its load generators.** Each run creates dedicated-CPU DigitalOcean
+  droplets in the same region and private VPC: the unit under test, and one to eight load
+  generators (`infra.loadgen.count`) that drive it with SIPp. The images are pinned by digest
+  when the run starts, and every droplet is deleted on every exit path.
 - **A Kubernetes cluster when a benchmark asks for one.** A benchmark with `uut.helm` installs a
   Helm chart on a DOKS cluster created for the run in the same VPC (kind with MetalLB on
   `--local`), and the page labels each benchmark with its target. The cluster is deleted with its
@@ -26,6 +26,54 @@ A project keeps only its benchmark definitions, in `perf/perfkit.yaml` (`apiVers
 perfkit/v1`). See [docs/perfkit-yaml.md](docs/perfkit-yaml.md) for every field and
 [docs/report-v1.md](docs/report-v1.md) for `report.json` and `runs.json`. The JSON Schema files
 are in [schemas/](schemas/).
+
+## How it works
+
+`perfkit run` creates the machines and starts an agent on the first load generator. The agent
+runs every benchmark on its own, publishes `live.json` while it runs, and keeps the raw files.
+`perfkit collect` fetches them, writes `report.json` and deletes everything.
+
+```mermaid
+flowchart LR
+  subgraph CI["GitHub Actions or a laptop"]
+    RUN["perfkit run<br/>reads perfkit.yaml"]
+    COL["perfkit collect<br/>analyze, report.json"]
+  end
+
+  subgraph DO["DigitalOcean, one private VPC per run"]
+    direction TB
+    LG1["Load generator 1<br/>agent, sampler,<br/>SIPp callers and callees"]
+    LGN["Load generators 2 to 8<br/>sampler,<br/>SIPp callers and callees"]
+    UUT["Unit under test<br/>one server (Docker Compose)<br/>or a DOKS cluster (Helm)"]
+    LG1 -- "SSH, run-only key" --> LGN
+    LG1 -- SIP --> UUT
+    LGN -- SIP --> UUT
+  end
+
+  RUN -- "1 create droplets, firewall,<br/>cluster; start the agent" --> DO
+  LG1 -- "2 live.json" --> LIVE["Live page"]
+  DO -- "3 raw files" --> COL
+  COL -- "4 delete everything" --> DO
+  COL --> SITE["Report page<br/>perfkit render"]
+```
+
+Every benchmark spreads `load.instances` SIPp callers and as many callees round robin over the
+load generators. The callees register their share of the users, then answer the calls Routr
+routes to them; no load generator talks to another during the load.
+
+```mermaid
+flowchart TD
+  A["Next benchmark"] --> B["Deploy the unit under test<br/>compose up, or helm install and seed"]
+  B --> C{"Every callee<br/>registered its share?"}
+  C -- no --> X["Abort the benchmark"]
+  C -- yes --> K{kind}
+  K -- capacity --> D["Offer a rate for one step<br/>(30 s), then add a step"]
+  D --> F{"p99, failed calls,<br/>any load generator saturated?"}
+  F -- ok --> D
+  F -- "a limit broke twice" --> G["Limit: the last good step"]
+  F -- saturated --> H["Lower bound: the load generator<br/>ran out before the unit under test"]
+  K -- soak --> S["Hold a share of the measured limit<br/>for hours; memory, failed calls, restarts"]
+```
 
 ## Prerequisites
 
@@ -401,8 +449,8 @@ failed call is one SIPp counts as failed, and CPU is in % of one core, so 100 is
 ### Capacity
 
 SIPp adds load in steps, such as 50 more calls/s every minute. With callees (`load.register`),
-the ramp starts only once every callee has registered, with the soak's timeout (`users / 20` +
-60 s) and abort reason. The uac gives up on a message it expects after 10 s, and a call that
+the ramp starts only once every callee process has registered its whole share, with the soak's
+timeout (`users / 20` + 60 s) and abort reason. The uac gives up on a message it expects after 10 s, and a call that
 timed out counts as failed; with a hold, a call's teardown failure is counted when it happens, up
 to `hold` + 10 s after the call starts, so `every` should be at least 4 × (hold + 10 s). For each
 step:
@@ -420,7 +468,7 @@ step:
 perfkit checks the steps in order:
 
 1. **Is the measurement valid?** A step is invalid when the load generator, not the server, was
-   the bottleneck: any SIPp role (the uac, or the callees `sipp-register` and `sipp-uas`) used
+   the bottleneck: any SIPp process (a uac instance, or a callee, `sipp-register` and `sipp-uas`) used
    more than 80% of one core, placed less than 95% of the offered rate,
    placed more than 105% of it (a burst of calls it owed from earlier steps), or the load
    generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
@@ -444,7 +492,7 @@ A soak holds a fixed rate for hours to find leaks. With `rate.fromCapacity`, the
 (when it was inconclusive because the load generator gave out, the highest step before that, if
 every one passed, as a lower bound), or `fallbackCps` when it found none; the progress log and
 `load.rateSource` in report.json say which.
-On the cluster, a restart is a container restart of a sampled pod (its restart count went up).
+On the cluster, a restart is a container restart of a sampled pod (its restart count went up) or a pod replaced by another; a sample the Metrics API left out is not a restart.
 
 - **Warm-up excluded.** Nothing measured during `warmup` counts toward any rule.
 - **Too little data.** When the samples after the warm-up cover less than 90% of `duration`, the
@@ -456,7 +504,8 @@ On the cluster, a restart is a container restart of a sampled pod (its restart c
 - **Callees not registered.** With a register role, the uac starts only once every callee has
   registered. When they have not within `users / 20` + 60 seconds, no call is placed and the
   verdict is **aborted** (`only 150 of 200 callees registered within 70 s, so no call was
-  placed`).
+  placed`). With several callee processes the reason names the one that fell short (`callee 2
+  registered 10 of 67 within 64 s, so no call was placed`).
 - **Memory growth.** For each process, the least-squares slope of its memory (RSS) in MB per
   hour. It fails at the threshold or above: 5.0 MB/h fails a 5 MB/h limit. The headline is the
   steepest process.
@@ -544,7 +593,7 @@ it to publish (or clear) a project's site before its first published run:
 
 ```console
 $ npx perfkit render --config perf/perfkit.yaml --out out/benchmarks
-wrote out/benchmarks/app/0.1.12/app.js (perfkit 0.1.12)
+wrote out/benchmarks/app/0.1.13/app.js (perfkit 0.1.13)
 wrote out/benchmarks/data/runs.json (0 runs)
 wrote out/benchmarks/data/site.json (live: https://perfkit.ngrok.app/live.json)
 wrote out/benchmarks/index.html (no runs yet)

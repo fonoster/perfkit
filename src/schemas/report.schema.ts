@@ -75,7 +75,16 @@ const runInfraSchema = z.strictObject({
   provider: z.enum(["digitalocean", "local"]),
   region: nonEmptyString,
   uut: machineSchema,
-  loadgen: machineSchema,
+  /**
+   * The load generator droplets: `count` of them (omitted when there is
+   * one), each of this size.
+   */
+  loadgen: machineSchema.extend({
+    count: positiveNumber
+      .int({ error: "expected a whole number" })
+      .min(2, { error: "expected 2 or more; leave it out for one" })
+      .optional()
+  }),
   os: nonEmptyString,
   docker: nonEmptyString,
   cluster: runClusterSchema.optional()

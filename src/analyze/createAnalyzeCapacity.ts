@@ -3,6 +3,7 @@
  */
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import {
+  calleeInstancesOf,
   type CapacityBenchmarkResult,
   type CapacityRule,
   type StoppedBy,
@@ -17,6 +18,7 @@ import { listRawDir } from "./listRawDir.js";
 import {
   type MeasuredStep,
   measureCapacityStep,
+  calleeProcessNames,
   uacProcessNames
 } from "./measureCapacityStep.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
@@ -89,6 +91,7 @@ export function createAnalyzeCapacity(deps: AnalyzeDeps) {
         udp,
         uutProcesses,
         uacProcesses: uacProcessNames(benchmark.load.instances),
+        calleeProcesses: calleeProcessNames(calleeInstancesOf(benchmark.load)),
         unit
       })
     );

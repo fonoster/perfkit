@@ -192,7 +192,7 @@ export function rttCsv(
 }
 
 export interface SamplerSpec {
-  host: "uut" | "loadgen";
+  host: "uut" | "loadgen" | `worker-${number}`;
   name: string;
   pid?: number;
   rssKB?: number;
@@ -218,7 +218,7 @@ export function samplerLines(tMs: number, specs: SamplerSpec[]): string[] {
 
 export function udpLine(
   tMs: number,
-  host: "uut" | "loadgen",
+  host: "uut" | "loadgen" | `worker-${number}`,
   RcvbufErrors = 0
 ): string {
   return JSON.stringify({

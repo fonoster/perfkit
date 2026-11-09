@@ -12,12 +12,36 @@ import type { ProcessSample } from "./types.js";
  * that is a pid change. A tick where the process is missing counts 1; a run
  * of missing ticks counts once, and the pids it comes back with are not
  * counted again.
+ *
+ * On the cluster (`fromCounters`) a name's `pid` is 1 plus the restarts its
+ * pods' counters show (see `toKubeSamplerLines`), so the restarts are the
+ * rises of the pid, and a tick with no sample (the metrics API had no usage
+ * yet) is not a restart: only a counter says a pod restarted.
  */
 export function countRestarts(
   samples: readonly ProcessSample[],
-  processNames: readonly string[]
+  processNames: readonly string[],
+  options: { fromCounters?: boolean } = {}
 ): number {
   const uut = samples.filter((sample) => sample.host === "uut");
+  if (options.fromCounters) {
+    return processNames.reduce((total, name) => {
+      const pids = uut
+        .filter((sample) => sample.name === name)
+        .sort((a, b) => a.tMs - b.tMs)
+        .map((sample) => sample.pid);
+      return (
+        total +
+        pids.reduce(
+          (sum, pid, index) =>
+            index === 0
+              ? sum
+              : sum + Math.max(0, pid - (pids[index - 1] ?? pid)),
+          0
+        )
+      );
+    }, 0);
+  }
   const ticks = [...new Set(uut.map((sample) => sample.tMs))].sort(
     (a, b) => a - b
   );

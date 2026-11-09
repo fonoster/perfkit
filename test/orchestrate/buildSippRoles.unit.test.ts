@@ -5,6 +5,8 @@ import { expect } from "chai";
 import {
   buildSippRoles,
   countUserRows,
+  registerUsersFileOf,
+  shareSizeOf,
   splitUsers,
   uacUsersFileOf
 } from "../../src/orchestrate/buildSippRoles.js";
@@ -494,7 +496,10 @@ describe("buildSippRoles with several uac instances", () => {
 
   it("should bind an instance on another load generator to that machine's address", () => {
     // Arrange
-    const benchmark = capacityWithCallees({ instances: 3 });
+    const benchmark = capacityWithCallees({
+      instances: 3,
+      rate: { start: 3, step: 3, every: "60s", max: 60 }
+    });
 
     // Act
     const roles = buildSippRoles({
@@ -531,7 +536,7 @@ describe("buildSippRoles with several uac instances", () => {
     // Assert
     const uacs = roles.filter(({ role }) => role === "uac");
     expect(uacs.map(({ instance }) => instance)).to.deep.equal([1, 2, 3, 4]);
-    expect(roles.filter(({ role }) => role !== "uac")).to.have.length(1);
+    expect(roles.filter(({ role }) => role !== "uac")).to.have.length(4);
     uacs.forEach(({ args, instance }) => {
       const flags = flagsOf(args);
       expect(flags).to.include("-r 25 -rp 1000 -rate_increase 25");
@@ -561,9 +566,54 @@ describe("buildSippRoles with several uac instances", () => {
 
     // Assert
     expect(uacs).to.have.length(3);
-    uacs.forEach(({ args }) => expect(flagsOf(args)).to.include("-r 33.3333"));
+    expect(uacs.map(({ args }) => args[args.indexOf("-r") + 1])).to.deep.equal([
+      "34",
+      "33",
+      "33"
+    ]);
     const cids = uacs.map(({ args }) => args[args.indexOf("-cid_str") + 1]);
     expect(new Set(cids).size).to.equal(3);
+  });
+
+  it("should split a ramp that does not divide evenly into whole numbers per instance", () => {
+    // Arrange: 50 over 8 is 6.25, which SIPp's -rate_increase rejects
+    const benchmark = capacityWithCallees({
+      instances: 8,
+      rate: { start: 50, step: 50, every: "30s", max: 3000 }
+    });
+
+    // Act
+    const uacs = buildSippRoles(input(benchmark)).filter(
+      ({ role }) => role === "uac"
+    );
+
+    // Assert
+    const valuesOf = (flag: string) =>
+      uacs.map(({ args }) => Number(args[args.indexOf(flag) + 1]));
+    const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+    [
+      ["-r", 50],
+      ["-rate_increase", 50],
+      ["-rate_max", 3000]
+    ].forEach(([flag, total]) => {
+      const values = valuesOf(flag as string);
+      expect(values.every(Number.isInteger), `${flag} whole`).to.equal(true);
+      expect(sum(values), `${flag} total`).to.equal(total);
+    });
+    expect(valuesOf("-r")).to.deep.equal([7, 7, 6, 6, 6, 6, 6, 6]);
+  });
+
+  it("should throw when a soak's rate is below the number of instances", () => {
+    // Arrange
+    const benchmark = soakBenchmarkConfigSchema.parse({
+      ...soakConfig(),
+      load: { ...soakConfig().load, instances: 3, rate: { cps: 2 } }
+    });
+
+    // Act and assert
+    expect(() => buildSippRoles(input(benchmark as never))).to.throw(
+      "cannot be split among 3 SIPp instances"
+    );
   });
 
   it("should keep the whole users file for a single instance", () => {
@@ -579,6 +629,142 @@ describe("buildSippRoles with several uac instances", () => {
     expect(uacs).to.have.length(1);
     expect(flagsOf(uacs[0]!.args)).to.include(
       "-inf /project/one-soak/callers.csv"
+    );
+  });
+});
+
+describe("buildSippRoles with several callee instances", () => {
+  const roles = (instances: number, extra = {}) => {
+    const benchmark = capacityWithCallees({
+      instances,
+      rate: { start: 100, step: 100, every: "60s", max: 400 }
+    });
+    return buildSippRoles({
+      benchmark,
+      runId: "RUN1",
+      uutIp: "10.0.0.2",
+      loadgenIp: "10.0.0.3",
+      registerUsers: 200,
+      ...extra
+    });
+  };
+  const calleesOf = (list: ReturnType<typeof roles>) =>
+    list.filter(({ role }) => role === "register");
+
+  it("should start one callee per instance, each with its own port, Call-ID and share of the users", () => {
+    // Act
+    const callees = calleesOf(roles(3));
+
+    // Assert
+    expect(callees.map(({ instance }) => instance)).to.deep.equal([1, 2, 3]);
+    const port = (args: string[]) => args[args.indexOf("-p") + 1];
+    expect(callees.map(({ args }) => port(args))).to.deep.equal([
+      "5070",
+      "5200",
+      "5201"
+    ]);
+    callees.forEach(({ args, instance }) => {
+      const flags = flagsOf(args);
+      expect(flags).to.include(
+        `-cid_str ${instance === 1 ? "register" : `register${instance}`}-run1-%u-%p@%s`
+      );
+      expect(flags).to.include(`-inf /raw/${registerUsersFileOf(instance)}`);
+      expect(flags).to.include(`-key uas_port ${port(args)}`);
+      expect(flags).to.include("-oocsf /project/one-soak/uas_answer.xml");
+    });
+    // 200 users dealt to 3 callees: 67, 67 and 66
+    expect(
+      callees.map(({ args }) => args[args.indexOf("-m") + 1])
+    ).to.deep.equal(["67", "67", "66"]);
+  });
+
+  it("should keep the whole register users file for a single callee", () => {
+    // Act
+    const callees = calleesOf(roles(1));
+
+    // Assert
+    expect(callees).to.have.length(1);
+    expect(flagsOf(callees[0]!.args)).to.include(
+      "-inf /project/one-soak/callees.csv"
+    );
+    expect(flagsOf(callees[0]!.args)).to.include("-m 200 ");
+  });
+
+  it("should bind a callee on another load generator to that machine's address", () => {
+    // Act
+    const callees = calleesOf(roles(3, { calleeIps: { 2: "10.0.0.9" } }));
+
+    // Assert
+    const bound = (instance: number) => {
+      const { args } = callees.find((spec) => spec.instance === instance)!;
+      return args[args.indexOf("-i") + 1];
+    };
+    expect([bound(1), bound(2), bound(3)]).to.deep.equal([
+      "10.0.0.3",
+      "10.0.0.9",
+      "10.0.0.3"
+    ]);
+  });
+
+  it("should keep the uas alone as one process when there is no register", () => {
+    // Arrange: a soak whose callees are a uas only
+    const base = soakConfig();
+    const benchmark = soakBenchmarkConfigSchema.parse({
+      ...base,
+      load: {
+        ...base.load,
+        register: undefined,
+        instances: 3,
+        rate: { cps: 100 }
+      }
+    });
+
+    // Act
+    const list = buildSippRoles({
+      benchmark: benchmark as never,
+      runId: "RUN1",
+      uutIp: "10.0.0.2",
+      loadgenIp: "10.0.0.3",
+      registerUsers: 0
+    });
+
+    // Assert
+    expect(list.filter(({ role }) => role === "uas")).to.have.length(1);
+    expect(list.filter(({ role }) => role === "register")).to.have.length(0);
+  });
+
+  it("should never give a callee a port a uac uses", () => {
+    // Act: 64 instances, the most there can be: 64 callees and 64 uacs
+    const list = roles(64);
+    const ports = list.map(({ args }) => args[args.indexOf("-p") + 1]);
+
+    // Assert
+    expect(ports).to.have.length(128);
+    expect(new Set(ports).size).to.equal(128);
+  });
+});
+
+describe("shareSizeOf", () => {
+  it("should count the rows each of the round-robin shares gets", () => {
+    expect([1, 2, 3].map((i) => shareSizeOf(200, 3, i))).to.deep.equal([
+      67, 67, 66
+    ]);
+    expect([1, 2, 3, 4].map((i) => shareSizeOf(10, 4, i))).to.deep.equal([
+      3, 3, 2, 2
+    ]);
+    expect(shareSizeOf(200, 1, 1)).to.equal(200);
+  });
+
+  it("should agree with splitUsers", () => {
+    // Arrange
+    const text = `SEQUENTIAL\n${Array.from({ length: 23 }, (_, i) => `u${i}`).join("\n")}\n`;
+
+    // Act
+    const shares = splitUsers(text, 5).map((share) => countUserRows(share));
+
+    // Assert
+    expect(shares).to.deep.equal(
+      [1, 2, 3, 4, 5].map((i) => shareSizeOf(23, 5, i))
     );
   });
 });

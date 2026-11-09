@@ -3,6 +3,8 @@
  */
 import { expect } from "chai";
 import {
+  calleeProcessName,
+  calleeProcessNames,
   measureCapacityStep,
   parseSamplerJsonl,
   parseUdpJsonl,
@@ -14,7 +16,8 @@ import {
   RAW_DIR,
   samplerLines,
   START_MS,
-  STEP_MS
+  STEP_MS,
+  udpLine
 } from "./builders.js";
 
 /** A callee SIPp at `pct`% of one core, sampled every 10 s over the step. */
@@ -29,12 +32,18 @@ function calleeAt(name: string, pct: number): string[] {
 async function step(
   spec: Parameters<typeof capacityRaw>[0][number],
   extraSampler: string[] = [],
-  uacProcesses?: string[]
+  uacProcesses?: string[],
+  calleeProcesses?: string[],
+  extraUdp: string[] = []
 ) {
   const files = capacityRaw([spec]);
   files["sampler.jsonl"] = [
     (files["sampler.jsonl"] as string).trimEnd(),
     ...extraSampler
+  ].join("\n");
+  files["udp.jsonl"] = [
+    (files["udp.jsonl"] as string).trimEnd(),
+    ...extraUdp
   ].join("\n");
   const uac = await readSippResults(
     fakeDeps(files),
@@ -53,6 +62,7 @@ async function step(
     udp: parseUdpJsonl(files["udp.jsonl"] as string, "udp.jsonl"),
     uutProcesses: ["edgeport"],
     ...(uacProcesses ? { uacProcesses } : {}),
+    ...(calleeProcesses ? { calleeProcesses } : {}),
     unit: "calls"
   });
 }
@@ -108,6 +118,94 @@ describe("measureCapacityStep", () => {
     expect(busy.step.sippCpuPct).to.equal(86);
     expect(fine.invalidReason).to.equal(null);
     expect(fine.step.sippCpuPct).to.equal(70);
+  });
+
+  it("should judge each callee instance on its own core, and name the busy one", async () => {
+    // Arrange: three callees, the third at 86% of its core
+    const callees = calleeProcessNames(3);
+
+    // Act
+    const measured = await step(
+      { offeredCps: 40, attempted: 2400 },
+      calleeAt("sipp-register-3", 86),
+      undefined,
+      callees
+    );
+
+    // Assert
+    expect(measured.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (sipp-register-3 at 86% of one core)"
+    );
+  });
+
+  it("should judge a process on another load generator the same way", async () => {
+    // Arrange: the second uac and the second callee run on worker-1
+    const onWorker = (name: string, pct: number) =>
+      Array.from({ length: 7 }, (_, tick) =>
+        samplerLines(START_MS + tick * 10_000, [
+          {
+            host: "worker-1",
+            name,
+            cpuTicks: Math.round(tick * pct * 10)
+          }
+        ])
+      ).flat();
+
+    // Act
+    const uac = await step(
+      { offeredCps: 40, attempted: 2400 },
+      onWorker("sipp-uac-2", 86),
+      ["sipp-uac", "sipp-uac-2"]
+    );
+    const callee = await step(
+      { offeredCps: 40, attempted: 2400 },
+      onWorker("sipp-register-2", 90),
+      undefined,
+      calleeProcessNames(2)
+    );
+
+    // Assert
+    expect(uac.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (SIPp instance sipp-uac-2 at 86% of one core)"
+    );
+    expect(callee.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (sipp-register-2 at 90% of one core)"
+    );
+  });
+
+  it("should mark a step invalid when another load generator drops UDP packets", async () => {
+    // Arrange: worker-1's counter rises by 25 during the step
+    const udp = [
+      udpLine(START_MS, "worker-1", 100),
+      udpLine(START_MS + 30_000, "worker-1", 110),
+      udpLine(START_MS + 60_000, "worker-1", 125)
+    ];
+
+    // Act
+    const measured = await step(
+      { offeredCps: 40, attempted: 2400 },
+      [],
+      undefined,
+      undefined,
+      udp
+    );
+
+    // Assert
+    expect(measured.step.loadgenUdpDrops).to.equal(25);
+    expect(measured.invalidReason).to.equal(
+      "load generator dropped UDP packets at 40 calls/s (25 buffer errors)"
+    );
+  });
+
+  it("should name the callee processes of an instance, the first without a number", () => {
+    expect(calleeProcessName("register", 1)).to.equal("sipp-register");
+    expect(calleeProcessName("uas", 3)).to.equal("sipp-uas-3");
+    expect(calleeProcessNames(2)).to.deep.equal([
+      "sipp-register",
+      "sipp-uas",
+      "sipp-register-2",
+      "sipp-uas-2"
+    ]);
   });
 
   it("should measure a valid step", async () => {

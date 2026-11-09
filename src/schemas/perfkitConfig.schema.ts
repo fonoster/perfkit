@@ -12,6 +12,7 @@ import { checkClusterForHelm } from "./checkClusterForHelm.js";
 import { checkFromCapacity } from "./checkFromCapacity.js";
 import { checkUniqueIds } from "./checkUniqueIds.js";
 import { projectLiveSchema } from "./report.schema.js";
+import { checkStartCoversInstances } from "./checkStartCoversInstances.js";
 import { checkStepEveryMultipleOfSippInterval } from "./checkStepEveryMultipleOfSippInterval.js";
 import { checkWarmupShorterThanStep } from "./checkWarmupShorterThanStep.js";
 import {
@@ -337,7 +338,8 @@ export const capacityBenchmarkConfigSchema = z
     thresholds: capacityThresholdsSchema
   })
   .superRefine(checkWarmupShorterThanStep)
-  .superRefine(checkStepEveryMultipleOfSippInterval);
+  .superRefine(checkStepEveryMultipleOfSippInterval)
+  .superRefine(checkStartCoversInstances);
 
 export const soakBenchmarkConfigSchema = z.strictObject({
   id: benchmarkIdSchema,

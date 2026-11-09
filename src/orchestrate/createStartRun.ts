@@ -111,20 +111,23 @@ export function createStartRun(deps: StartRunDeps) {
           "could not pull the sampler image on the server under test"
         );
       }
-      // The other load generators only run SIPp's uac
+      // The other load generators run SIPp's uac and callees, and a sampler
       await Promise.all(
         workers.map((worker) =>
           exec(
             worker,
-            shellJoin([
-              "docker",
-              "pull",
-              "-q",
-              "--platform",
-              "linux/amd64",
-              SIPP_IMAGE
-            ]),
-            `could not pull SIPp's image on the ${worker}`
+            [
+              shellJoin([
+                "docker",
+                "pull",
+                "-q",
+                "--platform",
+                "linux/amd64",
+                SIPP_IMAGE
+              ]),
+              shellJoin(["docker", "pull", "-q", SAMPLER_IMAGE])
+            ].join(" && "),
+            `could not pull the images on the ${worker}`
           )
         )
       );
@@ -190,7 +193,6 @@ export function createStartRun(deps: StartRunDeps) {
       await Promise.all(
         hosts.map(async (host) => {
           await remote.upload(host, project, paths.project);
-          if (workers.includes(host)) return;
           await exec(
             host,
             writeFileCommand(paths.sampler, SAMPLER_SCRIPT),
