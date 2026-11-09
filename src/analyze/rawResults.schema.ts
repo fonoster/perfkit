@@ -58,9 +58,15 @@ export const soakMetaSchema = z.strictObject({
   registerUsers: count.default(0)
 });
 
+/** The host a sampler line comes from: the UUT, a load generator or a worker. */
+const samplerHostSchema = z.union([
+  z.enum(["uut", "loadgen"]),
+  z.templateLiteral(["worker-", z.number().int().positive()])
+]);
+
 export const samplerLineSchema = z.strictObject({
   t: timestampSchema,
-  host: z.enum(["uut", "loadgen"]),
+  host: samplerHostSchema,
   name: nonEmptyString,
   pid: positiveNumber.int({ error: "expected a whole number" }),
   rssKB: nonNegativeNumber,
@@ -71,7 +77,7 @@ export const samplerLineSchema = z.strictObject({
 
 export const udpLineSchema = z.strictObject({
   t: timestampSchema,
-  host: z.enum(["uut", "loadgen"]),
+  host: samplerHostSchema,
   RcvbufErrors: count,
   SndbufErrors: count,
   InErrors: count

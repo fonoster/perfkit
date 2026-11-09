@@ -2,7 +2,8 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 /// <reference lib="dom" />
-import { type Live, liveSchema, type RunEntry } from "../../schemas/index.js";
+import type { Live, RunEntry } from "../../schemas/index.js";
+import { parseLiveTolerant } from "./parseLiveTolerant.js";
 import type { LiveViewContext } from "../live/types.js";
 import type { LiveControllerDeps, LiveMode } from "./liveController.types.js";
 
@@ -40,8 +41,7 @@ export function createLiveController(deps: LiveControllerDeps) {
     try {
       const response = await deps.fetchLive(deps.liveUrl);
       if (response.status !== 200) return null;
-      const parsed = liveSchema.safeParse(JSON.parse(response.text));
-      return parsed.success ? parsed.data : null;
+      return parseLiveTolerant(JSON.parse(response.text));
     } catch {
       return null;
     }

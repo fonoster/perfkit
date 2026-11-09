@@ -54,7 +54,7 @@ Rules for both files:
 | `run.startedAt`, `run.endedAt` | timestamp | |
 | `run.infra.provider` | `digitalocean` or `local` | `local` for `perfkit run --local`, where both roles run on one machine's Docker; sizes then read `local`. |
 | `run.infra.region` | string | |
-| `run.infra.uut`, `run.infra.loadgen` | object | `size` (slug), `vcpus` and `memoryMB` of each droplet. |
+| `run.infra.uut`, `run.infra.loadgen` | object | `size` (slug), `vcpus` and `memoryMB` of each droplet. `loadgen` also has `count`, the number of load generator droplets, when there are 2 or more. |
 | `run.infra.os` | string | The droplets' OS, like `Ubuntu 24.04`. |
 | `run.infra.docker` | string | The droplets' Docker version. |
 | `run.infra.cluster` | object | Optional: only when the run had a Kubernetes cluster. `provider` (`digitalocean` or `kind`), `nodes`, `size` (the node slug, `local` for kind) and `version` (like `1.33.1-do.0`). |

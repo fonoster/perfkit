@@ -76,6 +76,45 @@ describe("buildReport", () => {
       region: "nyc3"
     });
     expect(report.project.logoSvg).to.match(/^<svg/);
+    expect(report.run.infra.loadgen).to.not.have.property("count");
+  });
+
+  it("should list the number of load generators when there are workers", async () => {
+    // Arrange
+    const setup = await doSetup({ agentOnStart: false });
+    setup.infra.registry = fakeRegistry();
+    await perfkit(
+      [
+        "run",
+        "--config",
+        ROUTR_CONFIG,
+        "--target-version",
+        "2.31.5",
+        "--detach"
+      ],
+      setup.infra
+    );
+    const state = runStateSchema.parse(
+      JSON.parse(
+        await readFile(join(setup.hosts.roots.loadgen, "run.json"), "utf8")
+      )
+    );
+    const withWorkers = {
+      ...state,
+      hosts: {
+        ...state.hosts,
+        workers: [
+          { publicIp: "203.0.113.5", privateIp: "10.0.0.5" },
+          { publicIp: "203.0.113.6", privateIp: "10.0.0.6" }
+        ]
+      }
+    };
+
+    // Act
+    const report = buildReport(withWorkers, new Map(), "2026-11-03T15:00:00Z");
+
+    // Assert
+    expect(report.run.infra.loadgen.count).to.equal(3);
   });
 });
 

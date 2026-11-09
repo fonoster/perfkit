@@ -545,7 +545,7 @@ it to publish (or clear) a project's site before its first published run:
 
 ```console
 $ npx perfkit render --config perf/perfkit.yaml --out out/benchmarks
-wrote out/benchmarks/app/0.1.12/app.js (perfkit 0.1.12)
+wrote out/benchmarks/app/0.1.13/app.js (perfkit 0.1.13)
 wrote out/benchmarks/data/runs.json (0 runs)
 wrote out/benchmarks/data/site.json (live: https://perfkit.ngrok.app/live.json)
 wrote out/benchmarks/index.html (no runs yet)

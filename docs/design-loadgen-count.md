@@ -26,8 +26,11 @@ infra:
   processes.
 - Raw results: every worker's trace files are copied into the benchmark's raw directory
   (distinct names, as SIPp's pid already makes them), and `readSippResults` already merges
-  every pid. The sampler runs on each worker and writes `sampler-loadgen-<n>.jsonl`; the
-  analysis names processes `sipp-uac@<n>` so saturation is judged per process.
+  every pid. The sampler runs on each worker and writes `sampler-worker-<n>.jsonl` and
+  `udp-worker-<n>.jsonl`, copied back with the rest; process names are one per instance
+  (`sipp-uac-3`, `sipp-register-2`), so saturation is judged per process on any machine,
+  and UDP drops on any machine invalidate the step. The report's `run.infra.loadgen.count`
+  says how many droplets there were.
 - The callees (register and uas) are split like the uac: `instances` callee processes, each
   registering its share of the users (round robin) from its own port and address, spread over
   the load generators. Routr routes a call to the address of the REGISTER's top Via, so it goes

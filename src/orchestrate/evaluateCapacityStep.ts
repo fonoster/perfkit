@@ -70,6 +70,18 @@ export async function evaluateCapacityStep(input: {
   }
   const read = async (file: string) =>
     names.includes(file) ? deps.readFile(join(rawDir, file)) : "";
+  /** The first load generator's file and every worker's, as one text. */
+  const readLoadgens = async (kind: "sampler" | "udp") =>
+    (
+      await Promise.all(
+        names
+          .filter((file) =>
+            new RegExp(`^${kind}-(loadgen|worker-\\d+)\\.jsonl$`).test(file)
+          )
+          .sort()
+          .map(read)
+      )
+    ).join("");
   const measured = measureCapacityStep({
     offeredCps,
     window: capacityStepWindow({
@@ -80,10 +92,10 @@ export async function evaluateCapacityStep(input: {
     }),
     uac,
     samples: parseSamplerJsonl(
-      await read("sampler-loadgen.jsonl"),
+      await readLoadgens("sampler"),
       "sampler-loadgen.jsonl"
     ),
-    udp: parseUdpJsonl(await read("udp-loadgen.jsonl"), "udp-loadgen.jsonl"),
+    udp: parseUdpJsonl(await readLoadgens("udp"), "udp-loadgen.jsonl"),
     uutProcesses: [],
     uacProcesses: uacProcessNames(benchmark.load.instances),
     calleeProcesses: calleeProcessNames(calleeInstancesOf(benchmark.load)),

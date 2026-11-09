@@ -93,8 +93,8 @@ Breaking (a major release):
 - SIPp is single-threaded: about 350 calls/s per process over TCP, so a bigger load generator
   needs more `load.instances`, not more cores per process.
 - A capacity step is invalid when a SIPp process uses more than 80% of a core or the placed
-  rate is outside 95% to 105% of the offered one. The sampler watches the first load
-  generator's SIPp processes only, not the workers'.
+  rate is outside 95% to 105% of the offered one. Every load generator runs a sampler, and
+  the callees count too (one per instance).
 
 ### release-engineer
 

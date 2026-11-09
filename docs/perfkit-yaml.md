@@ -324,6 +324,7 @@ pool of source ports. `load.instances` stays the total number of uac SIPp proces
 rate stays the benchmark's: the instances are spread round robin over the droplets (the
 first on the first), each with its share of the callers, and so are the callees, each with its
 share of the users. Two c-8 droplets cost about what one c-16 does and have twice the ports. The
-others' SIPp files are copied back to the first every 30 s and when the benchmark ends. Limits: the sampler
-watches the first droplet's SIPp processes only, so a saturated worker is not flagged.
+others' SIPp files and sampler files are copied back to the first every 30 s and when the
+benchmark ends. Every droplet runs its own sampler, so a SIPp process over 80% of its core, or UDP
+drops, on any of them makes the step invalid.
 The design is in `docs/design-loadgen-count.md`.

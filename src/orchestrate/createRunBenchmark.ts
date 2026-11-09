@@ -228,6 +228,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const containers = {
       samplerUut: name(`${benchmark.id}-sampler-uut`),
       samplerLoadgen: name(`${benchmark.id}-sampler-loadgen`),
+      samplerWorker: (index: number) =>
+        name(`${benchmark.id}-sampler-worker-${index}`),
       otelcol: name(`${benchmark.id}-otelcol`),
       sipp: (role: string, instance = 1) =>
         name(`${benchmark.id}-sipp-${roleOf(role as SippRole, instance)}`)
@@ -303,6 +305,16 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         12 * 60 * 1000
       );
     };
+    /** Stops the samplers of the other load generators, so their files are whole. */
+    const removeWorkerSamplers = () =>
+      Promise.all(
+        workerHosts.map((host, position) =>
+          run(
+            host,
+            removeContainersCommand([containers.samplerWorker(position + 1)])
+          )
+        )
+      );
     const removeUutSampler = () =>
       onCluster
         ? run("loadgen", removeContainersCommand([containers.samplerUut]))
@@ -310,8 +322,14 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
 
     const cleanup = async () => {
       await Promise.all(
-        workerHosts.map((host) =>
-          run(host, removeContainersCommand(onGenerator(host)))
+        workerHosts.map((host, position) =>
+          run(
+            host,
+            removeContainersCommand([
+              ...onGenerator(host),
+              containers.samplerWorker(position + 1)
+            ])
+          )
         )
       );
       await run(
@@ -364,6 +382,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
             )
           )
       );
+      await removeWorkerSamplers();
       await pullWorkers(rawDir, true);
       if (benchmark.telemetry.otlp) {
         await run(
@@ -618,7 +637,11 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   async function startSamplers(
     benchmark: BenchmarkConfig,
     rawDir: string,
-    containers: { samplerUut: string; samplerLoadgen: string },
+    containers: {
+      samplerUut: string;
+      samplerLoadgen: string;
+      samplerWorker: (index: number) => string;
+    },
     prefix: string
   ) {
     const start = async (host: Host, container: string, spec: string) => {
@@ -643,7 +666,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       );
       if (out.code !== 0) {
         throw new AgentFailure(
-          `could not start the sampler on the ${host === "uut" ? "server under test" : "load generator"}: ${lastLine(out.stderr, `exit ${out.code}`)}`
+          `could not start the sampler on the ${host === "uut" ? "server under test" : host === "loadgen" ? "load generator" : host}: ${lastLine(out.stderr, `exit ${out.code}`)}`
         );
       }
     };
@@ -670,15 +693,19 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         buildSamplerSpec("uut", benchmark.uut.processes)
       );
     }
-    await start(
+    // Every load generator samples its own SIPp processes (the names are one
+    // per instance, so the spec is the same on all of them) and UDP counters
+    const loadgenSpec = buildSamplerSpec(
       "loadgen",
-      containers.samplerLoadgen,
-      buildSamplerSpec(
-        "loadgen",
-        [],
-        prefix,
-        benchmark.load.instances,
-        calleeInstancesOf(benchmark.load)
+      [],
+      prefix,
+      benchmark.load.instances,
+      calleeInstancesOf(benchmark.load)
+    );
+    await start("loadgen", containers.samplerLoadgen, loadgenSpec);
+    await Promise.all(
+      workerHosts.map((host, position) =>
+        start(host, containers.samplerWorker(position + 1), loadgenSpec)
       )
     );
   }
@@ -1094,7 +1121,9 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         : "";
     const merge = async (kind: "sampler" | "udp") => {
       const parts = await Promise.all(
-        ["uut", "loadgen"].map((host) => read(`${kind}-${host}.jsonl`))
+        ["uut", "loadgen", ...workerHosts].map((host) =>
+          read(`${kind}-${host}.jsonl`)
+        )
       );
       await deps.fs.writeFile(
         `${rawDir}/${kind}.jsonl`,

@@ -28,6 +28,22 @@ describe("parseUdpJsonl", () => {
     });
   });
 
+  it("should accept the udp counters of another load generator", () => {
+    // Arrange
+    const text = JSON.stringify({
+      t: new Date(START_MS).toISOString(),
+      host: "worker-2",
+      RcvbufErrors: 1,
+      SndbufErrors: 0,
+      InErrors: 1
+    });
+
+    // Act and assert
+    expect(parseUdpJsonl(text, "udp.jsonl")).to.deep.equal([
+      { tMs: START_MS, host: "worker-2", drops: 1 }
+    ]);
+  });
+
   describe("with invalid input", () => {
     it("should throw ValidationError for an unknown host", () => {
       // Arrange
