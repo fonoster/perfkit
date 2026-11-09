@@ -69,6 +69,8 @@ export interface SippRolesInput {
   cps?: number;
   /** A role's own address instead of `loadgenIp` (SIPp on the kind network). */
   bindIps?: Partial<Record<SippRole, string>>;
+  /** A uac instance's own address, when it runs on another load generator. */
+  uacIps?: Record<number, string>;
 }
 
 /**
@@ -104,7 +106,9 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
     "-sf",
     `${SIPP_PROJECT_DIR}/${scenario}`,
     "-i",
-    input.bindIps?.[role] ?? input.loadgenIp,
+    (role === "uac" ? input.uacIps?.[instance] : undefined) ??
+      input.bindIps?.[role] ??
+      input.loadgenIp,
     "-p",
     String(portOf(role) + instance - 1),
     "-cid_str",

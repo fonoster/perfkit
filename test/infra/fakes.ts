@@ -440,7 +440,7 @@ export async function perfkit(
 }
 
 /** The plan of the Routr example at 2.31.5, built by the real planRun. */
-export async function makePlan(): Promise<Plan> {
+export async function makePlan(loadgenCount = 1): Promise<Plan> {
   const { parse } = await import("yaml");
   const { readFileSync } = await import("node:fs");
   const { ROUTR_CONFIG } = await import("../fixtures.js");
@@ -453,10 +453,10 @@ export async function makePlan(): Promise<Plan> {
     }),
     getPublicIp: async () => "203.0.113.7"
   });
+  const raw = parse(readFileSync(ROUTR_CONFIG, "utf8"));
+  raw.infra.loadgen.count = loadgenCount;
   return planRun({
-    config: perfkitConfigSchema.parse(
-      parse(readFileSync(ROUTR_CONFIG, "utf8"))
-    ),
+    config: perfkitConfigSchema.parse(raw),
     targetVersion: "2.31.5",
     commit: COMMIT,
     startedAt: "2026-11-03T14:12:10Z"

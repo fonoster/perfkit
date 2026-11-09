@@ -61,7 +61,7 @@ export function formatPlan(
     ]),
     ...field("uut", [`${plan.uut.size.padEnd(sizeWidth)}${plan.uut.image}`]),
     ...field("loadgen", [
-      `${plan.loadgen.size.padEnd(sizeWidth)}${plan.loadgen.image}`
+      `${plan.loadgen.size.padEnd(sizeWidth)}${plan.loadgen.image}${plan.workers.length > 0 ? `, ${plan.workers.length + 1} of them` : ""}`
     ]),
     ...(plan.cluster
       ? field("cluster", [

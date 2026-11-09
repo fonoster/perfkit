@@ -362,7 +362,7 @@ perfkit sweep [--config <perfkit.yaml>] [--run <run-id>] [--older-than <duration
 ```
 
 The backstop for a run that could not tear down, for example a killed CI job. Run it on a
-schedule. It deletes droplets tagged `perfkit` and named `perfkit-<run id>-uut` or `-loadgen`,
+schedule. It deletes droplets tagged `perfkit` and named `perfkit-<run id>-uut`, `-loadgen` or `-worker-<n>`,
 and Kubernetes clusters tagged `perfkit` and named `perfkit-<run id in lowercase>` (with their
 load balancers and volumes), that are older than `--older-than`, and then the firewall, VPC and
 SSH key named `perfkit-<run id>` of those runs. It touches nothing else: not an untagged droplet, and never the

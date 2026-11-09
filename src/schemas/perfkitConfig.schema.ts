@@ -94,11 +94,25 @@ const configClusterSchema = z.strictObject({
   version: nonEmptyString.default("latest")
 });
 
+/**
+ * The load generator: `count` droplets of `size`. The first runs the agent and
+ * the callees; the others only add uac SIPp processes, each with its own address
+ * and its own pool of source ports (over TCP every call opens a connection).
+ */
+const loadgenSchema = machineSizeSchema.extend({
+  count: z
+    .number()
+    .int({ error: "expected a whole number" })
+    .min(1, { error: "expected 1 load generator or more" })
+    .max(8, { error: "expected 8 load generators or fewer" })
+    .default(1)
+});
+
 const configInfraSchema = z.strictObject({
   provider: z.literal("digitalocean").default("digitalocean"),
   region: nonEmptyString,
   uut: machineSizeSchema,
-  loadgen: machineSizeSchema,
+  loadgen: loadgenSchema,
   /** Required when a benchmark has `uut.helm`. */
   cluster: configClusterSchema.optional(),
   maxLifetime: durationSchema.default("9h")

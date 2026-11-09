@@ -41,7 +41,16 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
       remote: createSshRemote({
         ssh: infra.ssh,
         privateKey: run.identity.privateKey,
-        publicIps: { uut: run.uut.publicIp, loadgen: run.loadgen.publicIp }
+        publicIps: {
+          uut: run.uut.publicIp,
+          loadgen: run.loadgen.publicIp,
+          ...Object.fromEntries(
+            run.workers.map((worker, index) => [
+              `worker-${index + 1}`,
+              worker.publicIp
+            ])
+          )
+        }
       }),
       packageRoot: infra.packageRoot
     })({
@@ -58,6 +67,10 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
       hosts: {
         uutIp: run.uut.privateIp,
         loadgenIp: run.loadgen.privateIp,
+        workers: run.workers.map(({ publicIp, privateIp }) => ({
+          publicIp,
+          privateIp
+        })),
         vpcCidr: run.vpc.ipRange
       },
       projectDir: dirname(options.configPath),

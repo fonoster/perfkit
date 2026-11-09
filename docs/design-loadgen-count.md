@@ -1,6 +1,9 @@
 # Design: several load generator droplets (`infra.loadgen.count`)
 
-Status: not implemented. `load.instances` (SIPp processes on one load generator) ships first.
+Status: implemented in a simpler shape than below: `load.instances` stays the total and is
+spread round robin over the droplets; workers run uac only and their SIPp files are pulled
+back to the first droplet over SSH (their pids are renamed so two machines never collide).
+Not done: sampling the workers, and `sipp-uac@<n>` per-process names.
 
 ## Why
 

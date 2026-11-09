@@ -20,7 +20,9 @@ import type {
 
 const RUN_ID = String.raw`(\d{8}T\d{6}Z-[0-9a-f]{7})`;
 const RESOURCE_NAME = new RegExp(`^perfkit-${RUN_ID}$`);
-const DROPLET_NAME = new RegExp(`^perfkit-${RUN_ID}-(uut|loadgen)$`);
+const DROPLET_NAME = new RegExp(
+  `^perfkit-${RUN_ID}-(uut|loadgen|worker-\\d+)$`
+);
 const RUN_TAG = new RegExp(`^perfkit-run-${RUN_ID}$`);
 const CLUSTER_NAME = /^perfkit-(\d{8})t(\d{6})z-([0-9a-f]{7})$/;
 
@@ -43,7 +45,7 @@ export interface SweepResult {
 /**
  * Creates `sweep({ olderThan, runId, dryRun })`, the backstop for a run whose
  * teardown never happened. It deletes droplets tagged `perfkit` and named
- * `perfkit-<run id>-uut|loadgen` that are older than `olderThan`, or every
+ * `perfkit-<run id>-uut|loadgen|worker-<n>` that are older than `olderThan`, or every
  * one of run `runId` at any age. Once all of a run's droplets are selected
  * (or it has none left and its run id is older than `olderThan`), it also
  * deletes that run's firewall, VPC and SSH key, all named `perfkit-<run id>`.
@@ -134,7 +136,11 @@ export function createSweep(deps: {
         droplets: selected.map(({ droplet }) => ({
           id: droplet.id,
           name: droplet.name,
-          role: droplet.name.endsWith("-uut") ? "uut" : "loadgen",
+          role: droplet.name.endsWith("-uut")
+            ? "uut"
+            : /-worker-\d+$/.test(droplet.name)
+              ? "worker"
+              : "loadgen",
           publicIp: null,
           privateIp: null
         })),

@@ -115,6 +115,43 @@ describe("createProvision", () => {
       );
     });
 
+    it("should create the other load generators, wait for them and authorize the agent's key on them", async () => {
+      // Arrange
+      const { provision, client, ssh } = setup();
+      const plan = await makePlan(2);
+
+      // Act
+      const run = await provision(plan, { authorizedKeys: [AGENT_KEY] });
+
+      // Assert
+      const created = client.callsTo("createDroplet").map(([input]) => ({
+        name: (input as { name: string }).name,
+        userData: (input as { user_data: string }).user_data
+      }));
+      expect(created.map(({ name }) => name)).to.deep.equal([
+        `perfkit-${RUN_ID}-uut`,
+        `perfkit-${RUN_ID}-loadgen`,
+        `perfkit-${RUN_ID}-worker-1`
+      ]);
+      expect(created[2]!.userData).to.include(AGENT_KEY);
+      expect(
+        run.workers.map(({ name, role }) => ({ name, role }))
+      ).to.deep.equal([{ name: `perfkit-${RUN_ID}-worker-1`, role: "worker" }]);
+      expect(run.workers[0]!.privateIp).to.match(/^10\.116\.0\./);
+      expect(ssh.commands).to.have.length(3);
+    });
+
+    it("should return no workers with one load generator", async () => {
+      // Arrange
+      const { provision } = setup();
+
+      // Act
+      const run = await provision(await makePlan());
+
+      // Assert
+      expect(run.workers).to.deep.equal([]);
+    });
+
     it("should retry SSH until it is up", async () => {
       // Arrange
       const { now, sleep } = fakeClock();

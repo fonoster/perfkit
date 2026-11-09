@@ -492,6 +492,32 @@ describe("buildSippRoles with several uac instances", () => {
     registerUsers: 200
   });
 
+  it("should bind an instance on another load generator to that machine's address", () => {
+    // Arrange
+    const benchmark = capacityWithCallees({ instances: 3 });
+
+    // Act
+    const roles = buildSippRoles({
+      ...input(benchmark),
+      uacIps: { 2: "10.0.0.9" }
+    });
+
+    // Assert
+    const bound = (instance: number) => {
+      const spec = roles.find(
+        (role) => role.role === "uac" && role.instance === instance
+      );
+      return spec!.args[spec!.args.indexOf("-i") + 1];
+    };
+    expect([bound(1), bound(2), bound(3)]).to.deep.equal([
+      "10.0.0.3",
+      "10.0.0.9",
+      "10.0.0.3"
+    ]);
+    const callee = roles.find(({ role }) => role === "register");
+    expect(callee!.args[callee!.args.indexOf("-i") + 1]).to.equal("10.0.0.3");
+  });
+
   it("should split a capacity ramp's rate and open calls among the instances", () => {
     // Arrange
     const benchmark = capacityWithCallees({

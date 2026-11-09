@@ -81,7 +81,7 @@ export const planRunInputSchema = z
   });
 
 const dropletPlanSchema = z.strictObject({
-  role: z.enum(["uut", "loadgen"]),
+  role: z.enum(["uut", "loadgen", "worker"]),
   name: z.string().regex(/^perfkit-[A-Za-z0-9.-]+$/, {
     error: "expected a droplet name starting with perfkit-"
   }),
@@ -123,6 +123,8 @@ export const planSchema = z.strictObject({
   tags: z.array(nonEmptyString).min(1, { error: "expected at least one tag" }),
   uut: dropletPlanSchema,
   loadgen: dropletPlanSchema,
+  /** More load generators (`infra.loadgen.count` - 1): SIPp uac processes only. */
+  workers: z.array(dropletPlanSchema).default([]),
   sshSource: ipv4Cidr32Schema,
   images: z.array(resolvedImageSchema).min(1, {
     error: "expected at least one image"
@@ -156,7 +158,7 @@ const createdClusterSchema = z.object({
 const createdDropletSchema = z.strictObject({
   id: z.number().int().positive(),
   name: nonEmptyString,
-  role: z.enum(["uut", "loadgen"]),
+  role: z.enum(["uut", "loadgen", "worker"]),
   publicIp: z.string().nullable(),
   privateIp: z.string().nullable()
 });

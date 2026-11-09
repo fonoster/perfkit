@@ -45,6 +45,7 @@ Rules for the whole file:
 | `infra.region` | string | yes | | A DigitalOcean region slug, like `nyc3`. Both droplets run there. |
 | `infra.uut.size` | string | yes | | Droplet size slug of the unit under test, a dedicated-CPU size like `c-8`. |
 | `infra.loadgen.size` | string | yes | | Droplet size slug of the load generator, like `c-16`. |
+| `infra.loadgen.count` | integer | no | `1` | Load generator droplets, 1 to 8, all of `size`. The first runs the agent and the callees; the others only run uac SIPp processes. |
 | `infra.cluster` | object | yes, when a benchmark has `uut.helm` | none | The Kubernetes cluster of the helm benchmarks. A run creates it only when a selected benchmark has `uut.helm`. |
 | `infra.cluster.size` | string | yes, if `cluster` is set | | Droplet size slug of the DOKS node pool, like `c-8`. |
 | `infra.cluster.nodes` | integer, 1 to 20 | yes, if `cluster` is set | | Nodes in the pool. With `--local`, the kind cluster's nodes: a control plane, then workers. |
@@ -316,6 +317,13 @@ benchmarks:
 One c-16 load generator with `load.instances: 12` places about 12 times what one SIPp does.
 Beyond one machine the limits are network and source ports: over TCP each call holds a
 connection (`ip_local_port_range` is 1024-65535 with `tcp_tw_reuse`), so about 60,000
-connections per load generator address, which is `cps × (hold + TIME_WAIT)`. Several load
-generator droplets (`infra.loadgen.count`) are the next step and are not implemented yet; see
-the design in `docs/design-loadgen-count.md`.
+connections per load generator address, which is `cps × (hold + TIME_WAIT)`.
+
+`infra.loadgen.count` adds load generator droplets, each with its own address and its own
+pool of source ports. `load.instances` stays the total number of uac SIPp processes and the
+rate stays the benchmark's: the instances are spread round robin over the droplets (the
+first on the first), each with its share of the callers. Two c-8 droplets cost about what one
+c-16 does and have twice the ports. The callees stay on the first droplet, and the others'
+SIPp files are copied back to it every 30 s and when the benchmark ends. Limits: the sampler
+watches the first droplet's SIPp processes only, so a saturated worker is not flagged.
+The design is in `docs/design-loadgen-count.md`.

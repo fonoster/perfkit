@@ -15,9 +15,13 @@ const COPY_TIMEOUT_MS = 30 * 60 * 1000;
 export function createSshRemote(deps: {
   ssh: SshTools;
   privateKey: string;
-  publicIps: Record<Host, string>;
+  publicIps: Record<string, string>;
 }): Remote {
-  const host = (role: Host) => deps.publicIps[role];
+  const host = (role: Host) => {
+    const ip = deps.publicIps[role];
+    if (!ip) throw new Error(`the run has no ${role} droplet`);
+    return ip;
+  };
   const check = (what: string, out: { code: number; stderr: string }) => {
     if (out.code !== 0) {
       throw new Error(`${what}: ${lastLine(out.stderr, `exit ${out.code}`)}`);

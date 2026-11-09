@@ -156,6 +156,12 @@ export function createProvision(deps: ProvisionDeps) {
     };
     await createDroplet(plan.uut, options.authorizedKeys);
     await createDroplet(plan.loadgen, []);
+    // The other load generators take commands from the agent over SSH, like the UUT
+    await plan.workers.reduce(
+      (previous, worker) =>
+        previous.then(() => createDroplet(worker, options.authorizedKeys)),
+      Promise.resolve()
+    );
 
     const clusterPlan = plan.cluster;
     if (clusterPlan) {
@@ -307,11 +313,15 @@ export function createProvision(deps: ProvisionDeps) {
     const droplets = async () => {
       const uut = await waitActive(0);
       const loadgen = await waitActive(1);
-      await waitCloudInit(uut);
-      await waitCloudInit(loadgen);
-      return { uut, loadgen };
+      const workers = await Promise.all(
+        plan.workers.map((_, index) => waitActive(2 + index))
+      );
+      await Promise.all(
+        [uut, loadgen, ...workers].map((droplet) => waitCloudInit(droplet))
+      );
+      return { uut, loadgen, workers };
     };
-    const [{ uut, loadgen }, provisionedCluster] = await Promise.all([
+    const [{ uut, loadgen, workers }, provisionedCluster] = await Promise.all([
       droplets(),
       created.cluster ? waitCluster() : Promise.resolve(undefined)
     ]);
@@ -324,6 +334,7 @@ export function createProvision(deps: ProvisionDeps) {
       firewall: created.firewall,
       uut,
       loadgen,
+      workers,
       identity,
       ...(provisionedCluster ? { provisionedCluster } : {})
     };

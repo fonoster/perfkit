@@ -79,6 +79,10 @@ export const runStateSchema = z.strictObject({
   hosts: z.strictObject({
     uutIp: z.ipv4(),
     loadgenIp: z.ipv4(),
+    /** The other load generators (`infra.loadgen.count` - 1), in order. */
+    workers: z
+      .array(z.strictObject({ publicIp: z.ipv4(), privateIp: z.ipv4() }))
+      .default([]),
     vpcCidr: nonEmptyString
   }),
   machines: z.strictObject({
