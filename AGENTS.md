@@ -3,8 +3,8 @@
 ## Overview
 
 perfkit runs benchmarks for Fonoster projects (Routr first, then Roomr and Fonoster) and
-publishes one report format for all of them. It creates two DigitalOcean droplets per run (the
-unit under test and a load generator), plus a DOKS cluster when a benchmark has `uut.helm` (kind
+publishes one report format for all of them. It creates DigitalOcean droplets per run (the
+unit under test and one or more load generators), plus a DOKS cluster when a benchmark has `uut.helm` (kind
 with `--local`), drives the load, collects the results into a
 `report.json` (schema `perfkit/report/v1`), deletes the droplets, and renders a branded static
 HTML report page. Each project keeps only its benchmark definitions in a `perf/` folder
@@ -72,15 +72,40 @@ Breaking (a major release):
 - Releases are git tags `vX.Y.Z` on main. Callers run `npx -y github:fonoster/perfkit#vX.Y.Z`
   and `uses: fonoster/perfkit/.github/workflows/run.yaml@vX.Y.Z` at the same tag. perfkit is not
   published to npm.
+- A feature still being tried is tagged `vX.Y.Z-rc.N`; callers pin the rc tag until it settles.
 - Each release notes what changed for `perfkit.yaml`, the report schema and the workflow
   inputs, because callers pin a version.
+
+## Expert notes
+
+### realtime-comms-engineer
+
+- Over TCP SIPp runs `-t tn`: one connection per call, so one load generator address caps near
+  60,000 source ports, about `cps × (hold + TIME_WAIT)`.
+- SIPp names its result files after its pid (`<scenario>_<pid>_<what>`); the files of another
+  load generator get their worker number in front of the pid so two machines never collide.
+- Routr routes a call to the address in the top Via of the callee's REGISTER, so the callees
+  always run on the first load generator.
+
+### performance-engineer
+
+- SIPp is single-threaded: about 350 calls/s per process over TCP, so a bigger load generator
+  needs more `load.instances`, not more cores per process.
+- A capacity step is invalid when a SIPp process uses more than 80% of a core or the placed
+  rate is outside 95% to 105% of the offered one. The sampler watches the first load
+  generator's SIPp processes only, not the workers'.
+
+### release-engineer
+
+- The sweep deletes by tag and name: `perfkit-<run id>-uut`, `-loadgen` and `-worker-<n>`.
 
 ## Decisions
 
 - 2026-11-03: perfkit lives in its own repo and serves Routr, Roomr and Fonoster; each project
   keeps only `perf/`.
-- 2026-11-03: Two droplets per run (unit under test + load generator), dedicated CPU, same
-  region, private VPC, images pinned by digest; droplets are deleted on every exit path.
+- 2026-11-03: A run has a unit under test and one or more load generators
+  (`infra.loadgen.count`), dedicated CPU, same region, private VPC, images pinned by digest;
+  droplets are deleted on every exit path.
 - 2026-11-03: Benchmarks run after significant code changes, triggered by hand, not on every
   release. Report copy never says "every release".
 - 2026-11-03: Reports are public static pages on each project's GitHub Pages under
@@ -88,3 +113,10 @@ Breaking (a major release):
 - 2026-11-08: Kubernetes benchmarks run over TCP: DigitalOcean's REGIONAL_NETWORK load balancer
   drops UDP datagrams over 1,424 bytes. Locally the cluster is kind with MetalLB, whose L2 load
   balancer keeps the client address and the Service port as DOKS's does.
+- 2026-11-09: perfkit is in design: trial and error is fine, and green pull requests merge to
+  main without waiting for proof.
+- 2026-11-09: Every benchmark runs the same load generator layout so results compare:
+  `load.instances` is the total SIPp uac processes, spread round robin over the load
+  generators (two smaller droplets rather than one big one); benchmarks use 2, the Kubernetes
+  ones 8. The agent and the callees stay on the first; the others only run uac and take
+  commands over SSH.
