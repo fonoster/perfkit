@@ -32,6 +32,37 @@ describe("createSweep", () => {
       expect(teardown.callCount).to.equal(0);
     });
 
+    it("should sweep a run's worker load generators like its other droplets", async () => {
+      // Arrange
+      const client = new FakeDigitalOcean();
+      const runId = "20261103T021210Z-41d9a2c";
+      ["uut", "loadgen", "worker-1", "worker-2"].forEach((role) =>
+        client.seedDroplet({
+          name: `perfkit-${runId}-${role}`,
+          tags: ["perfkit", `perfkit-run-${runId}`],
+          createdAt: START - 10 * 3600 * 1000
+        })
+      );
+      const teardown = sinon.stub().resolves({ deleted: [], failures: [] });
+      const sweep = createSweep({ client, teardown, now: () => START });
+
+      // Act
+      const result = await sweep({ olderThan: "9h" });
+
+      // Assert
+      expect(result.runs).to.have.length(1);
+      const resources = teardown.firstCall.args[0] as {
+        droplets: Array<{ name: string; role: string }>;
+      };
+      expect(resources.droplets.map(({ name }) => name)).to.have.length(4);
+      expect(resources.droplets.map(({ role }) => role)).to.have.members([
+        "uut",
+        "loadgen",
+        "worker",
+        "worker"
+      ]);
+    });
+
     it("should look only at droplets tagged perfkit", async () => {
       // Arrange
       const client = new FakeDigitalOcean();

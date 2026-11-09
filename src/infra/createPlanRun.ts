@@ -75,6 +75,15 @@ export function createPlanRun(deps: {
         size: config.infra.loadgen.size,
         image: DROPLET_IMAGE
       },
+      workers: Array.from(
+        { length: config.infra.loadgen.count - 1 },
+        (_, index) => ({
+          role: "worker" as const,
+          name: `perfkit-${runId}-worker-${index + 1}`,
+          size: config.infra.loadgen.size,
+          image: DROPLET_IMAGE
+        })
+      ),
       sshSource: `${ip}/32`,
       images,
       benchmarks: selected,

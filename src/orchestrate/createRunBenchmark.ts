@@ -32,6 +32,8 @@ import { toKubeSamplerLines } from "./toKubeSamplerLines.js";
 import { countRegistered } from "./countRegistered.js";
 import {
   buildSippRoles,
+  splitUsers,
+  uacUsersFileOf,
   countUserRows,
   SIPP_PROJECT_DIR,
   type SippRoleSpec
@@ -58,6 +60,7 @@ import {
   SIPP_LANES,
   SIPP_START_TIMEOUT_MS,
   SIPP_TCP_NOFILE,
+  roleOf,
   type SippRole,
   STEP_GRACE_MS,
   UUT_UNRESPONSIVE
@@ -74,7 +77,14 @@ import type { RunState } from "./runState.schema.js";
 import { buildOtelcolConfig, buildSamplerSpec } from "./sampler.js";
 import { shellJoin, shellQuote, writeFileCommand } from "./shellQuote.js";
 import type { LiveRecorder } from "../live/types.js";
-import type { AgentFs, Host, HostShell } from "./types.js";
+import { generatorOf as generatorFor, workerFileName } from "./workerFiles.js";
+import { AGENT_SSH_OPTIONS, agentKeyPath } from "./createAgentShell.js";
+import {
+  type AgentFs,
+  type Host,
+  type HostShell,
+  workerIndexOf
+} from "./types.js";
 
 export interface AgentDeps {
   shell: HostShell;
@@ -123,6 +133,72 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     options?: Parameters<typeof kubeCommand>[2]
   ) => run("loadgen", kubeCommand(state, script, options), timeoutMs);
 
+  const workers = state.hosts.workers;
+  const generatorOf = (instance: number): Host =>
+    generatorFor(instance, workers.length);
+  const hostOf = (role: SippRole, instance: number): Host =>
+    role === "uac" ? generatorOf(instance) : "loadgen";
+  const workerHosts = workers.map((_, index): Host => `worker-${index + 1}`);
+  /** `ssh` to a worker's private address, from the load generator. */
+  const sshTo = (index: number) =>
+    `ssh ${AGENT_SSH_OPTIONS} -i ${shellQuote(agentKeyPath(state.root))} root@${workers[index - 1]!.privateIp}`;
+
+  /** Copies the named files of `rawDir` to the same directory on a worker. */
+  const pushToWorker = async (
+    index: number,
+    rawDir: string,
+    files: string[]
+  ) => {
+    const out = await run(
+      "loadgen",
+      `tar -C ${shellQuote(rawDir)} -cf - ${files.map((file) => shellQuote(file)).join(" ")} | ${sshTo(index)} ${shellQuote(`mkdir -p ${rawDir} && tar -C ${rawDir} -xf -`)}`,
+      5 * 60 * 1000
+    );
+    if (out.code !== 0) {
+      throw new AgentFailure(
+        `could not copy the users to worker-${index}: ${lastLine(out.stderr, `exit ${out.code}`)}`
+      );
+    }
+  };
+
+  /**
+   * Copies what the workers' SIPp processes wrote into `rawDir`, so the
+   * agent reads every load generator's files from one directory. SIPp names
+   * them after its pid, which two machines can share, so each worker's pids
+   * get the worker's number in front and are padded past any real pid:
+   * worker 1's pid 4242 is 100004242.
+   *
+   * @param strict - Fail when a worker can't be read; during a run it only
+   *   means the next pull has more to copy
+   */
+  const pullWorkers = async (rawDir: string, strict: boolean) => {
+    await Promise.all(
+      workers.map(async (_, position) => {
+        const index = position + 1;
+        const stage = `${rawDir}/.pull-${index}`;
+        await deps.fs.mkdir(stage);
+        const out = await run(
+          "loadgen",
+          `${sshTo(index)} ${shellQuote(`tar -C ${rawDir} -cf - .`)} | tar -C ${shellQuote(stage)} -xf -`,
+          5 * 60 * 1000
+        );
+        if (out.code !== 0 && strict) {
+          throw new AgentFailure(
+            `could not read the results of worker-${index}: ${lastLine(out.stderr, `exit ${out.code}`)}`
+          );
+        }
+        const names = await deps.fs.readdir(stage).catch(() => [] as string[]);
+        await Promise.all(
+          names.map(async (name) => {
+            const renamed = workerFileName(index, name);
+            if (renamed === null) return;
+            await deps.fs.rename(`${stage}/${name}`, `${rawDir}/${renamed}`);
+          })
+        );
+      })
+    );
+  };
+
   return async (
     benchmark: BenchmarkConfig,
     rate?: BenchmarkRate
@@ -149,9 +225,35 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       samplerUut: name(`${benchmark.id}-sampler-uut`),
       samplerLoadgen: name(`${benchmark.id}-sampler-loadgen`),
       otelcol: name(`${benchmark.id}-otelcol`),
-      sipp: (role: string) => name(`${benchmark.id}-sipp-${role}`)
+      sipp: (role: string, instance = 1) =>
+        name(`${benchmark.id}-sipp-${roleOf(role as SippRole, instance)}`)
     };
-    const allRoles: SippRole[] = ["uac", "register", "uas"];
+    const instances = benchmark.load.instances;
+    const uacInstances = Array.from({ length: instances }, (_, i) => i + 1);
+    const onGenerator = (host: Host) =>
+      uacInstances
+        .filter((instance) => generatorOf(instance) === host)
+        .map((instance) => containers.sipp("uac", instance));
+    const allSipp = [
+      ...(["register", "uas"] as SippRole[]).map((role) =>
+        containers.sipp(role)
+      ),
+      ...onGenerator("loadgen")
+    ];
+    /** A uac instance on a worker binds to that worker's own address. */
+    const uacIps = Object.fromEntries(
+      uacInstances.flatMap((instance) => {
+        const worker = workerIndexOf(generatorOf(instance));
+        if (worker === null) return [];
+        const address = workers[worker - 1]!;
+        return [[instance, onCluster ? address.publicIp : address.privateIp]];
+      })
+    ) as Record<number, string>;
+    if (instances > 1 && onCluster && cluster?.fixedIps) {
+      throw new AgentFailure(
+        `${benchmark.id} has load.instances ${instances}, which a local cluster's fixed SIPp addresses don't allow; run it with one instance or on DigitalOcean`
+      );
+    }
     const projectFile = (file: string) =>
       deps.fs.readFile(`${paths.project}/${file}`);
     const registerUsers = benchmark.load.register
@@ -169,7 +271,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         ...(rate ? { cps: rate.cps } : {}),
         ...(cluster && onCluster && cluster.fixedIps
           ? { bindIps: cluster.sippIps }
-          : {})
+          : {}),
+        uacIps
       });
     // Fails early, before anything starts, when the rate is missing.
     if (!onCluster) buildRoles(null);
@@ -193,10 +296,15 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         : run("uut", removeContainersCommand([containers.samplerUut]));
 
     const cleanup = async () => {
+      await Promise.all(
+        workerHosts.map((host) =>
+          run(host, removeContainersCommand(onGenerator(host)))
+        )
+      );
       await run(
         "loadgen",
         removeContainersCommand([
-          ...allRoles.map((role) => containers.sipp(role)),
+          ...allSipp,
           containers.otelcol,
           containers.samplerLoadgen
         ])
@@ -235,10 +343,15 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       await Promise.all(
         [...roles]
           .reverse()
-          .map(({ role }) =>
-            run("loadgen", stopSippCommand(containers.sipp(role)), 120_000)
+          .map(({ role, instance }) =>
+            run(
+              hostOf(role, instance),
+              stopSippCommand(containers.sipp(role, instance)),
+              120_000
+            )
           )
       );
+      await pullWorkers(rawDir, true);
       if (benchmark.telemetry.otlp) {
         await run(
           "loadgen",
@@ -547,7 +660,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     await start(
       "loadgen",
       containers.samplerLoadgen,
-      buildSamplerSpec("loadgen", [], prefix)
+      buildSamplerSpec("loadgen", [], prefix, benchmark.load.instances)
     );
   }
 
@@ -584,7 +697,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     benchmark: BenchmarkConfig,
     roles: SippRoleSpec[],
     rawDir: string,
-    container: (role: string) => string,
+    container: (role: string, instance?: number) => string,
     registerUsers: number
   ): Promise<{ startedMs: number; aborted: string | null }> {
     const benchmarkId = benchmark.id;
@@ -594,12 +707,17 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       benchmark.load.transport === "tcp" ? SIPP_TCP_NOFILE : 1048576;
     const startRole = async (spec: SippRoleSpec) => {
       const out = await run(
-        "loadgen",
+        hostOf(spec.role, spec.instance),
         dockerRunCommand({
           runId: state.runId,
-          name: container(spec.role),
+          name: container(spec.role, spec.instance),
           image: SIPP_IMAGE,
           detach: true,
+          // Several uac processes each get their own pid, so their trace
+          // files (<scenario>_<pid>_.csv) don't overwrite one another
+          ...(benchmark.load.instances > 1 && spec.role === "uac"
+            ? { pidHost: true }
+            : {}),
           platform: "linux/amd64",
           ...(cluster
             ? {
@@ -618,12 +736,42 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       );
       if (out.code !== 0) {
         throw new AgentFailure(
-          `could not start SIPp (${spec.role}): ${lastLine(out.stderr, `exit ${out.code}`)}`
+          `could not start SIPp (${roleOf(spec.role, spec.instance)}): ${lastLine(out.stderr, `exit ${out.code}`)}`
         );
       }
     };
-    const uac = roles.find(({ role }) => role === "uac") as SippRoleSpec;
+    const uacs = roles.filter(({ role }) => role === "uac");
+    const uac = uacs[0] as SippRoleSpec;
     const callees = roles.filter(({ role }) => role !== "uac");
+    if (uacs.length > 1 && benchmark.load.uac.users) {
+      const file = await deps.fs.readFile(
+        `${paths.project}/${benchmark.load.uac.users}`
+      );
+      const shares = (() => {
+        try {
+          return splitUsers(file, uacs.length);
+        } catch (err) {
+          throw new AgentFailure(`${benchmarkId}: ${(err as Error).message}`);
+        }
+      })();
+      await Promise.all(
+        shares.map((share, index) =>
+          deps.fs.writeFile(`${rawDir}/${uacUsersFileOf(index + 1)}`, share)
+        )
+      );
+    }
+    // Each worker gets its own instances' shares of the uac users
+    await Promise.all(
+      workers.map((_, position) => {
+        const index = position + 1;
+        const own = uacs
+          .filter(({ instance }) => generatorOf(instance) === `worker-${index}`)
+          .map(({ instance }) => uacUsersFileOf(instance));
+        return benchmark.load.uac.users && own.length > 0
+          ? pushToWorker(index, rawDir, own)
+          : run(`worker-${index}`, `mkdir -p ${shellQuote(rawDir)}`);
+      })
+    );
     await callees.reduce(
       (previous, spec) => previous.then(() => startRole(spec)),
       Promise.resolve()
@@ -646,7 +794,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       }
       await deps.log(`[${benchmarkId}] ${registerUsers} callees registered`);
     }
-    await startRole(uac);
+    await Promise.all(uacs.map((spec) => startRole(spec)));
     const startedMs = await sippStartTime(
       rawDir,
       uac.scenario,
@@ -723,6 +871,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           : await run("uut", "true", 20 * 1000);
         failedChecks = out.code === 0 ? 0 : failedChecks + 1;
         if (failedChecks >= MAX_FAILED_CHECKS) return false;
+        await pullWorkers(rawDir, false);
       }
       await deps.sleep(Math.max(1, Math.min(deadline, nextCheck) - deps.now()));
       return waitUntil(deadline);
@@ -741,27 +890,31 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const everyMs = durationToSeconds(every) * 1000;
     const total = Math.floor((max - start) / step) + 1;
     const runStep = async (
-      index: number
+      index: number,
+      priorBreaks: number
     ): Promise<{ steps: number; aborted: string | null }> => {
       const ok = await waitUntil(
         startedMs + (index + 1) * everyMs + STEP_GRACE_MS
       );
       if (!ok) return { steps: Math.max(index, 1), aborted: unresponsive };
+      await pullWorkers(rawDir, false);
       const evaluation = await evaluateCapacityStep({
         fs: deps.fs,
         rawDir,
         benchmark,
         index,
-        startMs: startedMs
+        startMs: startedMs,
+        priorBreaks,
+        lastStep: index + 1 >= total
       });
       await deps.log(evaluation.line);
       if (evaluation.point) deps.live?.point(benchmark.id, evaluation.point);
       if (evaluation.stop || index + 1 >= total) {
         return { steps: index + 1, aborted: null };
       }
-      return runStep(index + 1);
+      return runStep(index + 1, evaluation.broken ? priorBreaks + 1 : 0);
     };
-    return runStep(0);
+    return runStep(0, 0);
   }
 
   async function collectUutFiles(rawDir: string) {

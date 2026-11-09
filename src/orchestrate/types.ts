@@ -3,9 +3,16 @@
  */
 import type { SshResult } from "../infra/index.js";
 
-export type Host = "uut" | "loadgen";
+/** `worker-<n>` is the n-th load generator after the first (`loadgen`). */
+export type Host = "uut" | "loadgen" | `worker-${number}`;
 
-/** Runs a shell command as root on one of the run's two hosts. */
+/** The index (from 1) of a worker host, or null for the other hosts. */
+export function workerIndexOf(host: Host): number | null {
+  const match = /^worker-(\d+)$/.exec(host);
+  return match ? Number(match[1]) : null;
+}
+
+/** Runs a shell command as root on one of the run's hosts. */
 export type HostShell = (
   host: Host,
   command: string,

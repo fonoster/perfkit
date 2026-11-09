@@ -31,8 +31,14 @@ export function buildLiveCapacity(input: {
   const total = Math.floor((max - start) / step) + 1;
   const state = liveStateOf(input.selected, record);
   const points = record?.points ?? [];
-  const firstStop = points.findIndex((point) => !point.ok);
-  const passed = firstStop === -1 ? points : points.slice(0, firstStop);
+  // A step that broke a rule but did not stop the ramp is a spike: it neither
+  // ends the ramp nor counts as held
+  const firstStop = points.findIndex(
+    (point) => !point.ok && point.stopReason !== null
+  );
+  const passed = (
+    firstStop === -1 ? points : points.slice(0, firstStop)
+  ).filter((point) => point.ok);
   const heldCps = passed.at(-1)?.offeredCps ?? null;
   const loadStartedMs = record?.loadStartedMs ?? null;
   const index =

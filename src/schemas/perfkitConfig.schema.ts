@@ -94,11 +94,25 @@ const configClusterSchema = z.strictObject({
   version: nonEmptyString.default("latest")
 });
 
+/**
+ * The load generator: `count` droplets of `size`. The first runs the agent and
+ * the callees; the others only add uac SIPp processes, each with its own address
+ * and its own pool of source ports (over TCP every call opens a connection).
+ */
+const loadgenSchema = machineSizeSchema.extend({
+  count: z
+    .number()
+    .int({ error: "expected a whole number" })
+    .min(1, { error: "expected 1 load generator or more" })
+    .max(8, { error: "expected 8 load generators or fewer" })
+    .default(1)
+});
+
 const configInfraSchema = z.strictObject({
   provider: z.literal("digitalocean").default("digitalocean"),
   region: nonEmptyString,
   uut: machineSizeSchema,
-  loadgen: machineSizeSchema,
+  loadgen: loadgenSchema,
   /** Required when a benchmark has `uut.helm`. */
   cluster: configClusterSchema.optional(),
   maxLifetime: durationSchema.default("9h")
@@ -216,6 +230,17 @@ const loadFields = {
   /** The UUT's SIP port on the single server; unused with `uut.helm`. */
   port: portSchema.default(5060),
   uac: uacSchema,
+  /**
+   * How many SIPp processes place the calls: the rate, the open-call limit
+   * and the `uac.users` file are split among them. SIPp is single-threaded,
+   * so one process tops out at about one core's worth of calls.
+   */
+  instances: z
+    .number()
+    .int({ error: "expected a whole number of SIPp instances" })
+    .min(1, { error: "expected 1 instance or more" })
+    .max(64, { error: "expected 64 instances or fewer" })
+    .default(1),
   hold: durationSchema.default("0s"),
   // What one SIPp "call" is, as a plural noun for the page: "calls", "messages".
   unit: z
@@ -281,7 +306,9 @@ const percentSchema = nonNegativeNumber.max(100, {
 
 const capacityThresholdsSchema = z.strictObject({
   p99LatencyMs: positiveNumber,
-  failedCallsPct: percentSchema
+  failedCallsPct: percentSchema,
+  /** How many steps in a row must break a rule to end the ramp; 1 ends it at the first. */
+  confirmSteps: z.number().int().min(1).max(5).default(2)
 });
 
 const soakThresholdsSchema = z.strictObject({

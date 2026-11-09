@@ -110,6 +110,34 @@ describe("perfkitConfigSchema", () => {
       expect(config.benchmarks[0]?.load.uac.users).to.equal(undefined);
     });
 
+    it("should default load.instances to 1 and accept 1 to 64", () => {
+      // Arrange
+      const raw = loadConfig();
+
+      // Act and Assert
+      expect(perfkitConfigSchema.parse(raw).benchmarks[0]?.load.instances).to.equal(1);
+      raw.benchmarks[0].load.instances = 8;
+      expect(perfkitConfigSchema.parse(raw).benchmarks[0]?.load.instances).to.equal(8);
+      [0, 65, 1.5].forEach((bad) => {
+        raw.benchmarks[0].load.instances = bad;
+        expect(() => perfkitConfigSchema.parse(raw)).to.throw();
+      });
+    });
+
+    it("should default infra.loadgen.count to 1 and accept 1 to 8", () => {
+      // Arrange
+      const raw = loadConfig();
+
+      // Act and Assert
+      expect(perfkitConfigSchema.parse(raw).infra.loadgen.count).to.equal(1);
+      raw.infra.loadgen.count = 2;
+      expect(perfkitConfigSchema.parse(raw).infra.loadgen.count).to.equal(2);
+      [0, 9, 1.5].forEach((bad) => {
+        raw.infra.loadgen.count = bad;
+        expect(() => perfkitConfigSchema.parse(raw)).to.throw();
+      });
+    });
+
     it("should default a capacity warm-up to 0s and accept one shorter than a step", () => {
       const raw = loadConfig();
       expect(perfkitConfigSchema.parse(raw).benchmarks[0]?.warmup).to.equal(

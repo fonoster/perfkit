@@ -149,6 +149,15 @@ describe("orchestration helpers", () => {
     );
   });
 
+  it("should name each uac instance's SIPp process apart, in the cluster lane too", () => {
+    expect(buildSamplerSpec("loadgen", [], "", 3)).to.equal(
+      "sipp-uac\tsipp .*-cid_str uac-\nsipp-uac-2\tsipp .*-cid_str uac2-\nsipp-uac-3\tsipp .*-cid_str uac3-\nsipp-register\tsipp .*-cid_str register-\nsipp-uas\tsipp .*-cid_str uas-\n"
+    );
+    expect(buildSamplerSpec("loadgen", [], "k8s-", 2)).to.include(
+      "sipp-uac-2\tsipp .*-cid_str k8s-uac2-\n"
+    );
+  });
+
   it("should stage dist, package.json and only the production dependencies", async () => {
     // Arrange
     const pkg = await fakePackage("1.2.3");

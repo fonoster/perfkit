@@ -63,8 +63,11 @@ export function createStartRun(deps: StartRunDeps) {
 
   const fn = async (input: StartRunInput): Promise<RunState> => {
     const paths = runPaths(input.root);
+    const workers: Host[] = input.hosts.workers.map(
+      (_, index) => `worker-${index + 1}` as const
+    );
     const hosts: Host[] =
-      input.mode === "local" ? ["loadgen"] : ["uut", "loadgen"];
+      input.mode === "local" ? ["loadgen"] : ["uut", "loadgen", ...workers];
     const telemetry = input.plan.benchmarks.some((b) => b.telemetry.otlp);
     const staging = await mkdtemp(join(tmpdir(), "perfkit-stage-"));
     try {
@@ -108,6 +111,23 @@ export function createStartRun(deps: StartRunDeps) {
           "could not pull the sampler image on the server under test"
         );
       }
+      // The other load generators only run SIPp's uac
+      await Promise.all(
+        workers.map((worker) =>
+          exec(
+            worker,
+            shellJoin([
+              "docker",
+              "pull",
+              "-q",
+              "--platform",
+              "linux/amd64",
+              SIPP_IMAGE
+            ]),
+            `could not pull SIPp's image on the ${worker}`
+          )
+        )
+      );
 
       const info = async (host: Host): Promise<MachineInfo> =>
         parseDockerInfo(
@@ -170,6 +190,7 @@ export function createStartRun(deps: StartRunDeps) {
       await Promise.all(
         hosts.map(async (host) => {
           await remote.upload(host, project, paths.project);
+          if (workers.includes(host)) return;
           await exec(
             host,
             writeFileCommand(paths.sampler, SAMPLER_SCRIPT),

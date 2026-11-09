@@ -86,7 +86,7 @@ async function routrWithCapacityCallees(): Promise<string> {
       uas: { scenario: one-soak/uas_answer.xml }
       uac: { scenario: edgeport-echo/uac_message.xml }
       rate: { start: 50, step: 50, every: 60s, max: 200 }
-    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1 }
+    thresholds: { p99LatencyMs: 150, failedCallsPct: 0.1, confirmSteps: 1 }
 `
   );
   return join(dir, "perfkit.yaml");
@@ -107,6 +107,24 @@ function capacityWithRegistrations(registered: number) {
 const agentCommands = (setup: Awaited<ReturnType<typeof doSetup>>) =>
   setup.hosts.commands.filter(({ by }) => by === "agent");
 
+/** A copy of the minimal example whose capacity thresholds carry `extra`. */
+async function minimalWithThresholds(extra: string): Promise<string[]> {
+  const dir = await mkdtemp(join(tmpdir(), "perfkit-thresholds-"));
+  await cp(dirname(MINIMAL_CONFIG), dir, { recursive: true });
+  const config = join(dir, "perfkit.yaml");
+  const yaml = await readFile(config, "utf8");
+  await writeFile(
+    config,
+    yaml
+      .replace(
+        "thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1 }",
+        `thresholds: { p99LatencyMs: 50, failedCallsPct: 0.1, ${extra} }`
+      )
+      .replace("max: 200", "max: 300")
+  );
+  return ["run", "--config", config, "--target-version", "3.7.3"];
+}
+
 describe("createAgent", () => {
   it("should stop SIPp right after the first step that breaks a rule and start no next step", async () => {
     // Arrange
@@ -116,7 +134,10 @@ describe("createAgent", () => {
       { offeredCps: 150 },
       { offeredCps: 200 }
     ];
-    const setup = await detached(MINIMAL, capacityRaw(steps));
+    const setup = await detached(
+      await minimalWithThresholds("confirmSteps: 1"),
+      capacityRaw(steps)
+    );
     const progress = join(setup.hosts.roots.loadgen, "progress.log");
 
     // Act
@@ -144,6 +165,36 @@ describe("createAgent", () => {
     expect(setup.agent.clock.now - START_MS).to.be.lessThan(
       2 * 60 * 1000 + 12 * 1000
     );
+  });
+
+  it("should go on after a spike and stop when the next step breaks a rule too", async () => {
+    // Arrange: step 100 is slow but step 150 passes (a spike); 200 and 250 are slow
+    const steps = [
+      { offeredCps: 50 },
+      { offeredCps: 100, latencies: latenciesWithP99(80) },
+      { offeredCps: 150 },
+      { offeredCps: 200, latencies: latenciesWithP99(80) },
+      { offeredCps: 250, latencies: latenciesWithP99(80) },
+      { offeredCps: 300 }
+    ];
+    const setup = await detached(
+      await minimalWithThresholds("confirmSteps: 2"),
+      capacityRaw(steps)
+    );
+
+    // Act
+    await setup.agent.run(setup.runId());
+
+    // Assert
+    const progress = join(setup.hosts.roots.loadgen, "progress.log");
+    const lines = (await readFile(progress, "utf8")).trim().split("\n");
+    expect(lines).to.deep.equal([
+      "[sipp-uas] step    50 messages/s  p99 5.0 ms  failed 0.00%  ok",
+      "[sipp-uas] step   100 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; a spike unless the next step breaks too",
+      "[sipp-uas] step   150 messages/s  p99 5.0 ms  failed 0.00%  ok",
+      "[sipp-uas] step   200 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; a spike unless the next step breaks too",
+      "[sipp-uas] step   250 messages/s  p99 80.0 ms  failed 0.00%  over the p99 limit; stopping"
+    ]);
   });
 
   it("should leave a capacity warm-up out of the first step, live and in the final verdict", async () => {
@@ -324,6 +375,74 @@ describe("createAgent", () => {
       "utf8"
     );
     expect(progress).to.include("[one-soak] 200 callees registered");
+  });
+
+  it("should start one SIPp per instance, each with its own share of the callers", async () => {
+    // Arrange
+    const dir = await mkdtemp(join(tmpdir(), "perfkit-instances-"));
+    await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
+    const yaml = await readFile(ROUTR_CONFIG, "utf8");
+    const edited = yaml.replace(
+      "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }",
+      "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }\n      instances: 3"
+    );
+    expect(edited).to.not.equal(yaml);
+    await writeFile(join(dir, "perfkit.yaml"), edited);
+    const setup = await detached(
+      [
+        "run",
+        "--config",
+        join(dir, "perfkit.yaml"),
+        "--target-version",
+        "2.31.5",
+        "--benchmarks",
+        "one-soak"
+      ],
+      soakRaw({ warmupS: 1800, afterS: 21600 }),
+      true
+    );
+    await withCallees(setup);
+    const callers = Array.from({ length: 9 }, (_, i) => `caller${i};pw${i}`);
+    await writeFile(
+      join(setup.hosts.roots.loadgen, "project", "one-soak", "callers.csv"),
+      ["SEQUENTIAL", ...callers, ""].join("\n")
+    );
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    const started = (name: string) =>
+      commands.filter((c) => c.includes(name) && c.includes("run -d"));
+    expect(started("-sipp-uac ")).to.have.length(1);
+    expect(started("-sipp-uac2 ")).to.have.length(1);
+    expect(started("-sipp-uac3 ")).to.have.length(1);
+    expect(started("-sipp-uac2 ")[0]).to.include("--pid host");
+    const raw = join(setup.hosts.roots.loadgen, "raw", "one-soak");
+    const share = async (n: number) =>
+      (await readFile(join(raw, `users-uac-${n}.csv`), "utf8"))
+        .trim()
+        .split("\n");
+    expect(await share(1)).to.deep.equal([
+      "SEQUENTIAL",
+      "caller0;pw0",
+      "caller3;pw3",
+      "caller6;pw6"
+    ]);
+    expect(await share(3)).to.deep.equal([
+      "SEQUENTIAL",
+      "caller2;pw2",
+      "caller5;pw5",
+      "caller8;pw8"
+    ]);
+    // every instance is stopped, and the cleanup knows them all
+    expect(
+      commands.some(
+        (c) => c.includes("docker kill -s USR1") && c.includes("-sipp-uac3")
+      )
+    ).to.equal(true);
   });
 
   it("should abort a soak without starting its uac when the callees don't all register in time", async () => {

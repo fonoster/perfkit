@@ -115,7 +115,7 @@ Capacity `headline`:
 | `failedAtLimitPct`, `retransmissionsAtLimitPct` | number or null | Percentages at the limit. `null` when `limitCps` is. |
 
 Capacity `stoppedBy`: the step that ended the ramp, `{ offeredCps, rule, measured, limit }`, where
-`rule` is `p99LatencyMs` or `failedCallsPct`. `null` when `limitIsLowerBound` is `true`.
+`rule` is `p99LatencyMs` or `failedCallsPct`. A step may carry `spike: true` (optional, so older reports stay valid): it broke a rule but the next step passed, so it did not end the ramp. `null` when `limitIsLowerBound` is `true`.
 
 Capacity `series.steps`, one entry per step:
 

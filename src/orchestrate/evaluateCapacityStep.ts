@@ -7,7 +7,8 @@ import {
   measureCapacityStep,
   parseSamplerJsonl,
   parseUdpJsonl,
-  readSippResults
+  readSippResults,
+  uacProcessNames
 } from "../analyze/index.js";
 import type { CapacityBenchmarkConfig, LivePoint } from "../schemas/index.js";
 import { liveAnalyzeDeps } from "./liveAnalyzeDeps.js";
@@ -16,8 +17,10 @@ import type { AgentFs } from "./types.js";
 export interface StepEvaluation {
   /** The progress line, like `[id] step 50 calls/s  p99 4.1 ms  ...  ok`. */
   line: string;
-  /** True when the ramp ends here: a rule broken or the step invalid. */
+  /** True when the ramp ends here: the step invalid, or confirmSteps in a row broke a rule. */
   stop: boolean;
+  /** True when the step broke a rule (it ends the ramp only once confirmed). */
+  broken: boolean;
   /** The step's numbers for live.json; null when SIPp wrote nothing. */
   point: LivePoint | null;
 }
@@ -34,6 +37,10 @@ export async function evaluateCapacityStep(input: {
   benchmark: CapacityBenchmarkConfig;
   index: number;
   startMs: number;
+  /** How many steps just before this one broke a rule, in a row; 0 when none. */
+  priorBreaks?: number;
+  /** True for the last step of the ramp: a break there has no next step to wait for. */
+  lastStep?: boolean;
 }): Promise<StepEvaluation> {
   const { benchmark, index, rawDir } = input;
   const { start, step, every } = benchmark.load.rate;
@@ -52,6 +59,7 @@ export async function evaluateCapacityStep(input: {
     return {
       line: `${prefix}  SIPp wrote no results; stopping`,
       stop: true,
+      broken: false,
       point: null
     };
   }
@@ -72,23 +80,36 @@ export async function evaluateCapacityStep(input: {
     ),
     udp: parseUdpJsonl(await read("udp-loadgen.jsonl"), "udp-loadgen.jsonl"),
     uutProcesses: [],
+    uacProcesses: uacProcessNames(benchmark.load.instances),
     unit: benchmark.load.unit
   });
   const { p99LatencyMs, failedCallsPct } = benchmark.thresholds;
   const p99 = measured.step.p99Ms;
   const numbers = `${prefix}  p99 ${p99.toFixed(1)} ms  failed ${measured.failedPct.toFixed(2)}%`;
-  const outcome =
-    measured.invalidReason !== null
-      ? `invalid, ${measured.invalidReason}; stopping`
-      : p99 >= p99LatencyMs
-        ? "over the p99 limit; stopping"
-        : measured.failedPct >= failedCallsPct
-          ? "over the failed limit; stopping"
-          : "ok";
-  const stop = outcome !== "ok";
+  const invalid = measured.invalidReason !== null;
+  const brokenRule =
+    p99 >= p99LatencyMs
+      ? "over the p99 limit"
+      : measured.failedPct >= failedCallsPct
+        ? "over the failed limit"
+        : null;
+  const broken = !invalid && brokenRule !== null;
+  const confirmed =
+    broken &&
+    (input.lastStep === true ||
+      (input.priorBreaks ?? 0) + 1 >= benchmark.thresholds.confirmSteps);
+  const stop = invalid || confirmed;
+  const outcome = invalid
+    ? `invalid, ${measured.invalidReason}; stopping`
+    : broken
+      ? confirmed
+        ? `${brokenRule}; stopping`
+        : `${brokenRule}; a spike unless the next step breaks too`
+      : "ok";
   return {
     line: `${numbers}  ${outcome}`,
     stop,
+    broken,
     point: {
       offeredCps,
       achievedCps: measured.step.achievedCps,
@@ -98,7 +119,7 @@ export async function evaluateCapacityStep(input: {
       p95Ms: measured.step.p95Ms,
       p99Ms: p99,
       failedPct: measured.failedPct,
-      ok: !stop,
+      ok: !invalid && !broken,
       stopReason: stop ? outcome.replace(/; stopping$/, "") : null
     }
   };

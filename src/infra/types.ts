@@ -227,7 +227,7 @@ export interface SshIdentity {
 /** One image of perfkit.yaml, pinned: `ref` is `name:tag@digest`. */
 export type ResolvedImage = Plan["images"][number];
 
-export type DropletRole = "uut" | "loadgen";
+export type DropletRole = "uut" | "loadgen" | "worker";
 
 export type DropletPlan = Plan["uut"];
 
@@ -274,6 +274,8 @@ export interface ProvisionedRun extends RunResources {
   firewall: NonNullable<RunResources["firewall"]>;
   uut: CreatedDroplet & { publicIp: string; privateIp: string };
   loadgen: CreatedDroplet & { publicIp: string; privateIp: string };
+  /** The other load generators, in order; empty with `loadgen.count` 1. */
+  workers: Array<CreatedDroplet & { publicIp: string; privateIp: string }>;
   /** The private key that logs in as root on both droplets. */
   identity: SshIdentity;
   /** With a cluster in the plan. */

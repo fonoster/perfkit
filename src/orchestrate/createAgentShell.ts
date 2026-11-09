@@ -7,7 +7,7 @@ import { nameOf, RUN_LABEL } from "./constants.js";
 import { demuxLogs, type EngineRequest } from "./createDockerEngine.js";
 import type { RunState } from "./runState.schema.js";
 import { shellQuote } from "./shellQuote.js";
-import type { HostShell } from "./types.js";
+import { type HostShell, workerIndexOf } from "./types.js";
 
 const DOCKER_SOCKET = "/var/run/docker.sock";
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -24,9 +24,10 @@ export function agentKeyPath(root: string): string {
 /**
  * The agent's way to run host commands. Each command runs in a short-lived
  * DOCKER_CLI_IMAGE container on the load generator (host network, the
- * Docker socket and the run's root mounted at the same path). A UUT command
- * goes over SSH to the UUT's private IP with the run-only key; with --local
- * the UUT is this machine, so it runs the same way as a load-generator one.
+ * Docker socket and the run's root mounted at the same path). A UUT or worker
+ * (another load generator) command goes over SSH to its private IP with the
+ * run-only key; with --local the UUT is this machine, so it runs the same way
+ * as a load-generator one.
  */
 export function createAgentShell(deps: {
   engine: EngineRequest;
@@ -97,9 +98,23 @@ export function createAgentShell(deps: {
 
   return (host, command, options = {}) => {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    if (host === "uut" && state.mode === "digitalocean") {
+    const worker = workerIndexOf(host);
+    const remoteIp =
+      worker !== null
+        ? state.hosts.workers[worker - 1]?.privateIp
+        : host === "uut"
+          ? state.hosts.uutIp
+          : undefined;
+    if (worker !== null && remoteIp === undefined) {
+      return Promise.resolve({
+        code: 255,
+        stdout: "",
+        stderr: `the run has no ${host}`
+      });
+    }
+    if (remoteIp !== undefined && state.mode === "digitalocean") {
       return runHelper(
-        `ssh ${AGENT_SSH_OPTIONS} -i ${shellQuote(agentKeyPath(state.root))} root@${state.hosts.uutIp} ${shellQuote(command)}`,
+        `ssh ${AGENT_SSH_OPTIONS} -i ${shellQuote(agentKeyPath(state.root))} root@${remoteIp} ${shellQuote(command)}`,
         timeoutMs
       );
     }

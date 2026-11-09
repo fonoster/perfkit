@@ -14,6 +14,11 @@ import {
   type SippRole
 } from "./constants.js";
 
+/** Where an instance's share of the uac users file is, in a SIPp container. */
+export function uacUsersFileOf(instance: number): string {
+  return `users-uac-${instance}.csv`;
+}
+
 /** Where the project is mounted in a SIPp container. */
 export const SIPP_PROJECT_DIR = "/project";
 
@@ -41,6 +46,8 @@ export const SIPP_COMMON_FLAGS = [
 
 export interface SippRoleSpec {
   role: SippRole;
+  /** Which of the role's SIPp processes: 1, or 1 to `load.instances` for the uac. */
+  instance: number;
   /** The scenario, relative to the project directory. */
   scenario: string;
   /** SIPp's arguments, after the binary. */
@@ -62,6 +69,8 @@ export interface SippRolesInput {
   cps?: number;
   /** A role's own address instead of `loadgenIp` (SIPp on the kind network). */
   bindIps?: Partial<Record<SippRole, string>>;
+  /** A uac instance's own address, when it runs on another load generator. */
+  uacIps?: Record<number, string>;
 }
 
 /**
@@ -92,20 +101,35 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
   const holdS = durationToSeconds(load.hold);
   const hold = ["-d", String(holdS * 1000)];
   const tcp = load.transport === "tcp";
-  const scenarioFlags = (role: SippRole, scenario: string) => [
+  const instances = load.instances;
+  const scenarioFlags = (role: SippRole, scenario: string, instance = 1) => [
     "-sf",
     `${SIPP_PROJECT_DIR}/${scenario}`,
     "-i",
-    input.bindIps?.[role] ?? input.loadgenIp,
+    (role === "uac" ? input.uacIps?.[instance] : undefined) ??
+      input.bindIps?.[role] ??
+      input.loadgenIp,
     "-p",
-    String(portOf(role)),
+    String(portOf(role) + instance - 1),
     "-cid_str",
-    callIdOf(role, lane.prefix, input.runId),
+    callIdOf(role, lane.prefix, input.runId, instance),
     ...(tcp ? ["-t", "tn", ...SIPP_COMMON_FLAGS.slice(2)] : SIPP_COMMON_FLAGS)
   ];
   const users = (file: string | undefined) =>
     file ? ["-inf", `${SIPP_PROJECT_DIR}/${file}`] : [];
+  /** The uac's users: the whole file, or an instance's share of it in /raw. */
+  const uacUsers = (instance: number) =>
+    load.uac.users === undefined
+      ? []
+      : instances > 1
+        ? ["-inf", `/raw/${uacUsersFileOf(instance)}`]
+        : users(load.uac.users);
   const n = (value: number) => String(value);
+  /** An instance's share of a rate, or of a count of open calls. */
+  const share = (value: number) =>
+    String(Math.round((value / instances) * 1e4) / 1e4);
+  const shareCalls = (calls: number) => Math.ceil(calls / instances);
+  const instanceList = Array.from({ length: instances }, (_, i) => i + 1);
   /** `-l <calls>`, and over TCP `-max_socket` for them. */
   const open = (calls: number) => [
     "-l",
@@ -124,6 +148,7 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
       return [
         {
           role: "register",
+          instance: 1,
           scenario: register.scenario,
           args: [
             target,
@@ -152,6 +177,7 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
       return [
         {
           role: "uas",
+          instance: 1,
           scenario: uas.scenario,
           args: [
             ...scenarioFlags("uas", uas.scenario),
@@ -181,51 +207,53 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
     const rampCalls = Math.ceil(max * (holdS + 20));
     return [
       ...callees(rampCalls),
-      {
+      ...instanceList.map((instance): SippRoleSpec => ({
         role: "uac",
+        instance,
         scenario: load.uac.scenario,
         args: [
           target,
-          ...scenarioFlags("uac", load.uac.scenario),
-          ...users(load.uac.users),
+          ...scenarioFlags("uac", load.uac.scenario, instance),
+          ...uacUsers(instance),
           "-r",
-          n(start),
+          share(start),
           "-rp",
           "1000",
           "-rate_increase",
-          n(step),
+          share(step),
           "-rate_interval",
           n(durationToSeconds(every)),
           "-rate_max",
-          n(max),
+          share(max),
           "-no_rate_quit",
           "-recv_timeout",
           n(CAPACITY_RECV_TIMEOUT_MS),
-          ...open(rampCalls),
+          ...open(shareCalls(rampCalls)),
           ...hold
         ]
-      }
+      }))
     ];
   }
 
   const cps = soakCps();
   return [
     ...callees(null),
-    {
+    ...instanceList.map((instance): SippRoleSpec => ({
       role: "uac",
+      instance,
       scenario: load.uac.scenario,
       args: [
         target,
-        ...scenarioFlags("uac", load.uac.scenario),
-        ...users(load.uac.users),
+        ...scenarioFlags("uac", load.uac.scenario, instance),
+        ...uacUsers(instance),
         "-r",
-        n(cps),
+        share(cps),
         "-rp",
         "1000",
-        ...open(soakCalls()),
+        ...open(shareCalls(soakCalls())),
         ...hold
       ]
-    }
+    }))
   ];
 }
 
@@ -235,4 +263,26 @@ export function countUserRows(text: string): number {
     .split("\n")
     .slice(1)
     .filter((line) => line.trim() !== "").length;
+}
+
+/**
+ * Splits a SIPp injection file among `instances` uac processes: each gets the
+ * first line (the mode, like SEQUENTIAL) and every `instances`-th row, so a
+ * user is used by one instance only. Throws when there are fewer users than
+ * instances.
+ */
+export function splitUsers(text: string, instances: number): string[] {
+  const lines = text.split("\n");
+  const header = lines[0] ?? "";
+  const rows = lines.slice(1).filter((line) => line.trim() !== "");
+  if (rows.length < instances) {
+    throw new Error(
+      `the users file has ${rows.length} users, fewer than the ${instances} SIPp instances`
+    );
+  }
+  return Array.from(
+    { length: instances },
+    (_, instance) =>
+      `${header}\n${rows.filter((_row, index) => index % instances === instance).join("\n")}\n`
+  );
 }

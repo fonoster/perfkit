@@ -566,6 +566,9 @@
                             },
                             "valid": {
                               "type": "boolean"
+                            },
+                            "spike": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -865,6 +868,9 @@
                               "maximum": 9007199254740991
                             },
                             "valid": {
+                              "type": "boolean"
+                            },
+                            "spike": {
                               "type": "boolean"
                             }
                           },

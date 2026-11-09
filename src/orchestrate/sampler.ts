@@ -1,7 +1,13 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { SAMPLE_INTERVAL_S, SIPP_PROCESS, type SippRole } from "./constants.js";
+import { uacProcessName } from "../analyze/measureCapacityStep.js";
+import {
+  roleOf,
+  SAMPLE_INTERVAL_S,
+  SIPP_PROCESS,
+  type SippRole
+} from "./constants.js";
 import type { Host } from "./types.js";
 
 /**
@@ -45,18 +51,29 @@ done
 /**
  * The sampler spec for one host: the UUT's processes from perfkit.yaml, or
  * the load generator's SIPp roles, matched by their Call-ID prefix flag
- * (with the lane's prefix, `k8s-` for a cluster benchmark).
+ * (with the lane's prefix, `k8s-` for a cluster benchmark). With several uac
+ * instances each is its own process name (`sipp-uac`, `sipp-uac-2`, ...), so
+ * the load generator's saturation is judged per SIPp process.
  */
 export function buildSamplerSpec(
   host: Host,
   processes: ReadonlyArray<{ name: string; match: string }>,
-  prefix = ""
+  prefix = "",
+  uacInstances = 1
 ): string {
+  const roles = (Object.keys(SIPP_PROCESS) as SippRole[]).flatMap((role) =>
+    role === "uac"
+      ? Array.from({ length: uacInstances }, (_, i) => ({
+          name: uacProcessName(i + 1),
+          role: roleOf(role, i + 1)
+        }))
+      : [{ name: SIPP_PROCESS[role], role }]
+  );
   const entries =
     host === "uut"
       ? processes.map(({ name, match }) => [name, match])
-      : (Object.keys(SIPP_PROCESS) as SippRole[]).map((role) => [
-          SIPP_PROCESS[role],
+      : roles.map(({ name, role }) => [
+          name,
           `sipp .*-cid_str ${prefix}${role}-`
         ]);
   return entries.map(([name, match]) => `${name}\t${match}\n`).join("");

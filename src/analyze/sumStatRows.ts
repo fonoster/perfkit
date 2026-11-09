@@ -13,7 +13,10 @@ export interface StatSums {
   failuresByReason: Record<string, number>;
   /** Retransmissions(P). */
   retransmissions: number;
-  /** The highest CurrentCall. */
+  /**
+   * The highest CurrentCall; with several SIPp processes, the sum of each
+   * one's highest.
+   */
   maxCurrentCalls: number;
 }
 
@@ -51,9 +54,17 @@ export function sumStatRows(
     failed: sum("FailedCall(P)"),
     failuresByReason,
     retransmissions: sum("Retransmissions(P)"),
-    maxCurrentCalls: inside.reduce(
-      (max, row) => Math.max(max, row.counters.CurrentCall ?? 0),
-      0
-    )
+    maxCurrentCalls: maxCurrentCalls(inside)
   };
+}
+
+function maxCurrentCalls(rows: readonly StatRow[]): number {
+  const perProcess = rows.reduce((max, row) => {
+    const key = row.pid ?? "";
+    return max.set(
+      key,
+      Math.max(max.get(key) ?? 0, row.counters.CurrentCall ?? 0)
+    );
+  }, new Map<string, number>());
+  return [...perProcess.values()].reduce((sum, value) => sum + value, 0);
 }

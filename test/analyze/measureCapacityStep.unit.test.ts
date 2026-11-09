@@ -28,7 +28,8 @@ function calleeAt(name: string, pct: number): string[] {
 
 async function step(
   spec: Parameters<typeof capacityRaw>[0][number],
-  extraSampler: string[] = []
+  extraSampler: string[] = [],
+  uacProcesses?: string[]
 ) {
   const files = capacityRaw([spec]);
   files["sampler.jsonl"] = [
@@ -51,6 +52,7 @@ async function step(
     ),
     udp: parseUdpJsonl(files["udp.jsonl"] as string, "udp.jsonl"),
     uutProcesses: ["edgeport"],
+    ...(uacProcesses ? { uacProcesses } : {}),
     unit: "calls"
   });
 }
@@ -81,6 +83,31 @@ describe("measureCapacityStep", () => {
       "load generator saturated at 40 calls/s (sipp-uas at 90% of one core)"
     );
     expect(below.invalidReason).to.equal(null);
+  });
+
+  it("should judge each uac instance on its own core, and name the busy one", async () => {
+    // Arrange: three instances, the third at 86% of its core, the rest idle
+    const uacProcesses = ["sipp-uac", "sipp-uac-2", "sipp-uac-3"];
+
+    // Act
+    const busy = await step(
+      { offeredCps: 40, attempted: 2400 },
+      [...calleeAt("sipp-uac-2", 20), ...calleeAt("sipp-uac-3", 86)],
+      uacProcesses
+    );
+    const fine = await step(
+      { offeredCps: 40, attempted: 2400 },
+      uacProcesses.slice(1).flatMap((name) => calleeAt(name, 70)),
+      uacProcesses
+    );
+
+    // Assert: the busiest instance decides, not their sum (70 + 70 + 10 > 80)
+    expect(busy.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (SIPp instance sipp-uac-3 at 86% of one core)"
+    );
+    expect(busy.step.sippCpuPct).to.equal(86);
+    expect(fine.invalidReason).to.equal(null);
+    expect(fine.step.sippCpuPct).to.equal(70);
   });
 
   it("should measure a valid step", async () => {

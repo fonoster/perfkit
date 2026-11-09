@@ -189,7 +189,9 @@ export const stepSchema = z.strictObject({
   uutCpuPct: nonNegativeNumber,
   loadgenUdpDrops: count,
   uutUdpDrops: count,
-  valid: z.boolean()
+  valid: z.boolean(),
+  /** True when the step broke a rule but the next one passed: a spike, not the limit. */
+  spike: z.boolean().optional()
 });
 
 export const seriesSchema = z.strictObject({

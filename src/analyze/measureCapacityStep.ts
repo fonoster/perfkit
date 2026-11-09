@@ -26,6 +26,21 @@ export const MIN_ACHIEVED_RATIO = 0.95;
 export const MAX_ACHIEVED_RATIO = 1.05;
 /** The load generator's SIPp process, as the sampler names it. */
 export const SIPP_UAC_PROCESS = "sipp-uac";
+
+/**
+ * The sampler's name for one SIPp uac instance: `sipp-uac` for the first,
+ * `sipp-uac-2` and on for the others.
+ */
+export function uacProcessName(instance: number): string {
+  return instance > 1 ? `${SIPP_UAC_PROCESS}-${instance}` : SIPP_UAC_PROCESS;
+}
+
+/** The sampler names of `instances` uac processes, in order. */
+export function uacProcessNames(instances: number): string[] {
+  return Array.from({ length: Math.max(1, instances) }, (_, index) =>
+    uacProcessName(index + 1)
+  );
+}
 /** The callee SIPp processes, checked against the same 80%. */
 export const SIPP_CALLEE_PROCESSES = ["sipp-register", "sipp-uas"] as const;
 
@@ -36,6 +51,8 @@ export interface StepInput {
   samples: readonly ProcessSample[];
   udp: readonly UdpSample[];
   uutProcesses: readonly string[];
+  /** The uac SIPp processes' sampler names; just `sipp-uac` by default. */
+  uacProcesses?: readonly string[];
   unit: string;
 }
 
@@ -50,7 +67,7 @@ export interface MeasuredStep {
  * Measures one capacity step. Latency counts the calls whose request was
  * sent in the step; attempts, failures and retransmissions come from the
  * stat rows in it. A step is invalid when the uac SIPp, or a callee SIPp
- * (register, uas), used more than 80% of one core, placed less than 95% or more than 105% of the offered rate, or the load generator's
+ * (register, uas), used more than 80% of one core (any one of several uac instances), placed less than 95% or more than 105% of the offered rate, or the load generator's
  * UDP drops rose.
  */
 export function measureCapacityStep(input: StepInput): MeasuredStep {
@@ -64,12 +81,20 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
   const failedPct = roundTo(
     sums.attempted > 0 ? (sums.failed / sums.attempted) * 100 : 0
   );
-  const sippCpuPct = roundTo(
-    cpuPctOver(
-      processSamples(input.samples, "loadgen", SIPP_UAC_PROCESS),
-      window
-    )
+  // Each instance is its own process and has its own core to saturate, so the
+  // busiest one decides, not the sum
+  const instanceCpu = (input.uacProcesses ?? [SIPP_UAC_PROCESS]).map(
+    (name) => ({
+      name,
+      cpuPct: cpuPctOver(processSamples(input.samples, "loadgen", name), window)
+    })
   );
+  const busiest = instanceCpu.reduce((top, one) =>
+    one.cpuPct > top.cpuPct ? one : top
+  );
+  const sippCpuPct = roundTo(busiest.cpuPct);
+  const sippWhat =
+    instanceCpu.length > 1 ? `SIPp instance ${busiest.name}` : "SIPp";
   const uutCpuPct = roundTo(
     input.uutProcesses.reduce(
       (sum, name) =>
@@ -86,7 +111,7 @@ export function measureCapacityStep(input: StepInput): MeasuredStep {
   const rate = `${formatNumber(offeredCps)} ${input.unit}/s`;
   const invalidReason =
     sippCpuPct > MAX_SIPP_CPU_PCT
-      ? `load generator saturated at ${rate} (SIPp at ${Math.round(sippCpuPct)}% of one core)`
+      ? `load generator saturated at ${rate} (${sippWhat} at ${Math.round(sippCpuPct)}% of one core)`
       : callee
         ? `load generator saturated at ${rate} (${callee.name} at ${Math.round(callee.cpuPct)}% of one core)`
         : achievedCps < offeredCps * MIN_ACHIEVED_RATIO

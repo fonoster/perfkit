@@ -71,6 +71,33 @@ describe("createPlanRun", () => {
       ]);
     });
 
+    it("should plan no worker with one load generator and count - 1 with more", async () => {
+      // Arrange
+      const { planRun } = setup();
+      const config = loadConfig();
+      const planFor = (count: number) => {
+        config.infra.loadgen.count = count;
+        return planRun({
+          ...input(),
+          config: perfkitConfigSchema.parse(config)
+        });
+      };
+
+      // Act
+      const [one, three] = [await planFor(1), await planFor(3)];
+
+      // Assert
+      expect(one.workers).to.deep.equal([]);
+      expect(three.workers).to.deep.equal(
+        [1, 2].map((n) => ({
+          role: "worker",
+          name: `perfkit-${RUN_ID}-worker-${n}`,
+          size: "c-16",
+          image: "ubuntu-22-04-x64"
+        }))
+      );
+    });
+
     it("should keep only the benchmarks asked for", async () => {
       // Arrange
       const { planRun } = setup();

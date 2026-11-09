@@ -96,6 +96,12 @@
             "size": {
               "type": "string",
               "minLength": 1
+            },
+            "count": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
             }
           },
           "required": [
@@ -396,6 +402,12 @@
                     ],
                     "additionalProperties": false
                   },
+                  "instances": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
                   "hold": {
                     "default": "0s",
                     "type": "string",
@@ -512,6 +524,12 @@
                     "type": "number",
                     "minimum": 0,
                     "maximum": 100
+                  },
+                  "confirmSteps": {
+                    "default": 2,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
                   }
                 },
                 "required": [
@@ -733,6 +751,12 @@
                       "scenario"
                     ],
                     "additionalProperties": false
+                  },
+                  "instances": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
                   },
                   "hold": {
                     "default": "0s",

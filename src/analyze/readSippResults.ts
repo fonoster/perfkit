@@ -47,7 +47,10 @@ export async function readSippResults(
           sentMs: stat.startMs + row.atMs - row.responseTimeMs,
           latencyMs: row.responseTimeMs
         }));
-      return { rows: stat.rows, calls };
+      return {
+        rows: stat.rows.map((row) => ({ ...row, pid })),
+        calls
+      };
     })
   );
   return {

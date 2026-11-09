@@ -45,6 +45,7 @@ Rules for the whole file:
 | `infra.region` | string | yes | | A DigitalOcean region slug, like `nyc3`. Both droplets run there. |
 | `infra.uut.size` | string | yes | | Droplet size slug of the unit under test, a dedicated-CPU size like `c-8`. |
 | `infra.loadgen.size` | string | yes | | Droplet size slug of the load generator, like `c-16`. |
+| `infra.loadgen.count` | integer | no | `1` | Load generator droplets, 1 to 8, all of `size`. The first runs the agent and the callees; the others only run uac SIPp processes. |
 | `infra.cluster` | object | yes, when a benchmark has `uut.helm` | none | The Kubernetes cluster of the helm benchmarks. A run creates it only when a selected benchmark has `uut.helm`. |
 | `infra.cluster.size` | string | yes, if `cluster` is set | | Droplet size slug of the DOKS node pool, like `c-8`. |
 | `infra.cluster.nodes` | integer, 1 to 20 | yes, if `cluster` is set | | Nodes in the pool. With `--local`, the kind cluster's nodes: a control plane, then workers. |
@@ -151,6 +152,7 @@ the other kind rejects them.
 | `load.register.users` | path | yes, if `register` is set | | The agents to register (CSV). |
 | `load.register.expires` | integer (seconds) | no | `300` | The registration lifetime. |
 | `load.uas.scenario` | path | yes, if `uas` is set | | `load.uas` is optional, for either kind: the SIPp scenario that answers calls. |
+| `load.instances` | integer, 1 to 64 | no | `1` | How many SIPp processes place the calls. SIPp runs on one core, so a single process tops out at about 350 calls/s over TCP and a few thousand over UDP, however big the load generator is. With `instances: N`, perfkit starts N uac processes on the load generator, each with 1/N of the rate (`-r`, `-rate_increase`, `-rate_max`) and of the open calls (`-l`), its own local port (5080, 5081, ...) and Call-ID prefix (`uac-`, `uac2-`, ...), and its own share of `uac.users` (every N-th row, so a user belongs to one process). The callees (`register`, `uas`) stay one process. The report sums all of them. A capacity step is invalid when any one instance is over 80% of its core; set `instances` to about the cores you want to use, leaving a few for the callees and the sampler. A local cluster (`--local`, fixed SIPp addresses) accepts only `1`. |
 | `load.hold` | duration | no | `0s` | How long each call stays up before BYE. |
 | `load.unit` | string | no | `calls` | What one SIPp call is, as a lowercase plural noun shown on the page (`calls`, `messages`). Copied into each report.json benchmark as `unit`. |
 | `load.rate.start` | number (calls/s) | *capacity*: yes | | The first step's rate. |
@@ -172,10 +174,11 @@ Thresholds:
 | :--- | :--- | :--- | :--- |
 | `thresholds.p99LatencyMs` | capacity | ms | p99 time from INVITE to 200 OK. A step at or above it breaks the rule. |
 | `thresholds.failedCallsPct` | capacity, soak | % (0 to 100) | Failed calls. |
+| `thresholds.confirmSteps` | capacity | integer 1 to 5, default 2 | How many steps in a row must break a rule to end the ramp. A step that breaks a rule while the next one passes is a spike: the ramp goes on, the step stays in the report flagged `spike`, and it is not the limit. `1` ends the ramp at the first break. A break on the last step counts as confirmed; a step the load generator could not measure ends the ramp at once. |
 | `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process after the warm-up. |
 | `thresholds.restarts` | soak | count | Process restarts allowed. |
 
-`capacity` requires exactly `p99LatencyMs` and `failedCallsPct`. `soak` requires exactly
+`capacity` requires `p99LatencyMs` and `failedCallsPct`, and takes `confirmSteps`. `soak` requires exactly
 `memoryGrowthMBPerHour`, `failedCallsPct` and `restarts`.
 
 A capacity uac gives up on any message it expects after 10 s (`-recv_timeout 10000`), and a call
@@ -308,3 +311,19 @@ benchmarks:
     telemetry: { otlp: true, sampleRatio: 0.01 }
     thresholds: { memoryGrowthMBPerHour: 5, failedCallsPct: 0.1, restarts: 0 }
 ```
+
+### Scaling the load generator
+
+One c-16 load generator with `load.instances: 12` places about 12 times what one SIPp does.
+Beyond one machine the limits are network and source ports: over TCP each call holds a
+connection (`ip_local_port_range` is 1024-65535 with `tcp_tw_reuse`), so about 60,000
+connections per load generator address, which is `cps × (hold + TIME_WAIT)`.
+
+`infra.loadgen.count` adds load generator droplets, each with its own address and its own
+pool of source ports. `load.instances` stays the total number of uac SIPp processes and the
+rate stays the benchmark's: the instances are spread round robin over the droplets (the
+first on the first), each with its share of the callers. Two c-8 droplets cost about what one
+c-16 does and have twice the ports. The callees stay on the first droplet, and the others'
+SIPp files are copied back to it every 30 s and when the benchmark ends. Limits: the sampler
+watches the first droplet's SIPp processes only, so a saturated worker is not flagged.
+The design is in `docs/design-loadgen-count.md`.
