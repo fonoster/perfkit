@@ -3,6 +3,7 @@
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import { type BenchmarkConfig, targetOf } from "../schemas/index.js";
+import { splitRate } from "./splitRate.js";
 import {
   CAPACITY_RECV_TIMEOUT_MS,
   callIdOf,
@@ -125,9 +126,18 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
         ? ["-inf", `/raw/${uacUsersFileOf(instance)}`]
         : users(load.uac.users);
   const n = (value: number) => String(value);
-  /** An instance's share of a rate, or of a count of open calls. */
-  const share = (value: number) =>
-    String(Math.round((value / instances) * 1e4) / 1e4);
+  /** An instance's share of a rate: whole numbers that add up to the rate. */
+  const share = (value: number, instance: number) =>
+    String(splitRate(value, instances)[instance - 1]);
+  /** A starting rate's share: every instance must get some, or it sends nothing. */
+  const startShare = (value: number, instance: number) => {
+    if (value < instances) {
+      throw new Error(
+        `${benchmark.id}: a starting rate of ${value} cannot be split among ${instances} SIPp instances; start at ${instances} or more`
+      );
+    }
+    return share(value, instance);
+  };
   const shareCalls = (calls: number) => Math.ceil(calls / instances);
   const instanceList = Array.from({ length: instances }, (_, i) => i + 1);
   /** `-l <calls>`, and over TCP `-max_socket` for them. */
@@ -216,15 +226,15 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
           ...scenarioFlags("uac", load.uac.scenario, instance),
           ...uacUsers(instance),
           "-r",
-          share(start),
+          startShare(start, instance),
           "-rp",
           "1000",
           "-rate_increase",
-          share(step),
+          share(step, instance),
           "-rate_interval",
           n(durationToSeconds(every)),
           "-rate_max",
-          share(max),
+          share(max, instance),
           "-no_rate_quit",
           "-recv_timeout",
           n(CAPACITY_RECV_TIMEOUT_MS),
@@ -247,7 +257,7 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
         ...scenarioFlags("uac", load.uac.scenario, instance),
         ...uacUsers(instance),
         "-r",
-        share(cps),
+        startShare(cps, instance),
         "-rp",
         "1000",
         ...open(shareCalls(soakCalls())),

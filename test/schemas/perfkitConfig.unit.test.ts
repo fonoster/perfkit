@@ -244,6 +244,15 @@ describe("perfkitConfigSchema", () => {
       ]);
     });
 
+    it("should reject a capacity start below the number of SIPp instances", () => {
+      const raw = loadConfig();
+      raw.benchmarks[0].load.instances = 8;
+      raw.benchmarks[0].load.rate.start = 5;
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "benchmarks[0].load.rate.start: expected a starting rate of 8 or more, one for each of the 8 SIPp instances"
+      ]);
+    });
+
     it("should require duration and warmup in a soak benchmark", () => {
       const raw = loadConfig();
       delete raw.benchmarks[1].duration;

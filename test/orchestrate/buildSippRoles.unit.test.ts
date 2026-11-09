@@ -494,7 +494,10 @@ describe("buildSippRoles with several uac instances", () => {
 
   it("should bind an instance on another load generator to that machine's address", () => {
     // Arrange
-    const benchmark = capacityWithCallees({ instances: 3 });
+    const benchmark = capacityWithCallees({
+      instances: 3,
+      rate: { start: 3, step: 3, every: "60s", max: 60 }
+    });
 
     // Act
     const roles = buildSippRoles({
@@ -561,9 +564,54 @@ describe("buildSippRoles with several uac instances", () => {
 
     // Assert
     expect(uacs).to.have.length(3);
-    uacs.forEach(({ args }) => expect(flagsOf(args)).to.include("-r 33.3333"));
+    expect(uacs.map(({ args }) => args[args.indexOf("-r") + 1])).to.deep.equal([
+      "34",
+      "33",
+      "33"
+    ]);
     const cids = uacs.map(({ args }) => args[args.indexOf("-cid_str") + 1]);
     expect(new Set(cids).size).to.equal(3);
+  });
+
+  it("should split a ramp that does not divide evenly into whole numbers per instance", () => {
+    // Arrange: 50 over 8 is 6.25, which SIPp's -rate_increase rejects
+    const benchmark = capacityWithCallees({
+      instances: 8,
+      rate: { start: 50, step: 50, every: "30s", max: 3000 }
+    });
+
+    // Act
+    const uacs = buildSippRoles(input(benchmark)).filter(
+      ({ role }) => role === "uac"
+    );
+
+    // Assert
+    const valuesOf = (flag: string) =>
+      uacs.map(({ args }) => Number(args[args.indexOf(flag) + 1]));
+    const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+    [
+      ["-r", 50],
+      ["-rate_increase", 50],
+      ["-rate_max", 3000]
+    ].forEach(([flag, total]) => {
+      const values = valuesOf(flag as string);
+      expect(values.every(Number.isInteger), `${flag} whole`).to.equal(true);
+      expect(sum(values), `${flag} total`).to.equal(total);
+    });
+    expect(valuesOf("-r")).to.deep.equal([7, 7, 6, 6, 6, 6, 6, 6]);
+  });
+
+  it("should throw when a soak's rate is below the number of instances", () => {
+    // Arrange
+    const benchmark = soakBenchmarkConfigSchema.parse({
+      ...soakConfig(),
+      load: { ...soakConfig().load, instances: 3, rate: { cps: 2 } }
+    });
+
+    // Act and assert
+    expect(() => buildSippRoles(input(benchmark as never))).to.throw(
+      "cannot be split among 3 SIPp instances"
+    );
   });
 
   it("should keep the whole users file for a single instance", () => {
