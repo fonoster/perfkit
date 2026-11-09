@@ -8,10 +8,10 @@ report page.
 perfkit benchmarks Fonoster projects (Routr first, then Roomr and Fonoster) the same way and
 publishes the results in one format.
 
-- **Two droplets per run.** Each run creates two dedicated-CPU DigitalOcean droplets in the same
-  region and private VPC: the unit under test, and a load generator that drives it with SIPp.
-  The images are pinned by digest when the run starts, and both droplets are deleted on every
-  exit path.
+- **A unit under test and its load generators.** Each run creates dedicated-CPU DigitalOcean
+  droplets in the same region and private VPC: the unit under test, and one to eight load
+  generators (`infra.loadgen.count`) that drive it with SIPp. The images are pinned by digest
+  when the run starts, and every droplet is deleted on every exit path.
 - **A Kubernetes cluster when a benchmark asks for one.** A benchmark with `uut.helm` installs a
   Helm chart on a DOKS cluster created for the run in the same VPC (kind with MetalLB on
   `--local`), and the page labels each benchmark with its target. The cluster is deleted with its
@@ -26,6 +26,54 @@ A project keeps only its benchmark definitions, in `perf/perfkit.yaml` (`apiVers
 perfkit/v1`). See [docs/perfkit-yaml.md](docs/perfkit-yaml.md) for every field and
 [docs/report-v1.md](docs/report-v1.md) for `report.json` and `runs.json`. The JSON Schema files
 are in [schemas/](schemas/).
+
+## How it works
+
+`perfkit run` creates the machines and starts an agent on the first load generator. The agent
+runs every benchmark on its own, publishes `live.json` while it runs, and keeps the raw files.
+`perfkit collect` fetches them, writes `report.json` and deletes everything.
+
+```mermaid
+flowchart LR
+  subgraph CI["GitHub Actions or a laptop"]
+    RUN["perfkit run<br/>reads perfkit.yaml"]
+    COL["perfkit collect<br/>analyze, report.json"]
+  end
+
+  subgraph DO["DigitalOcean, one private VPC per run"]
+    direction TB
+    LG1["Load generator 1<br/>agent, sampler,<br/>SIPp callers and callees"]
+    LGN["Load generators 2 to 8<br/>sampler,<br/>SIPp callers and callees"]
+    UUT["Unit under test<br/>one server (Docker Compose)<br/>or a DOKS cluster (Helm)"]
+    LG1 -- "SSH, run-only key" --> LGN
+    LG1 -- SIP --> UUT
+    LGN -- SIP --> UUT
+  end
+
+  RUN -- "1 create droplets, firewall,<br/>cluster; start the agent" --> DO
+  LG1 -- "2 live.json" --> LIVE["Live page"]
+  DO -- "3 raw files" --> COL
+  COL -- "4 delete everything" --> DO
+  COL --> SITE["Report page<br/>perfkit render"]
+```
+
+Every benchmark spreads `load.instances` SIPp callers and as many callees round robin over the
+load generators. The callees register their share of the users, then answer the calls Routr
+routes to them; no load generator talks to another during the load.
+
+```mermaid
+flowchart TD
+  A["Next benchmark"] --> B["Deploy the unit under test<br/>compose up, or helm install and seed"]
+  B --> C{"Every callee<br/>registered its share?"}
+  C -- no --> X["Abort the benchmark"]
+  C -- yes --> K{kind}
+  K -- capacity --> D["Offer a rate for one step<br/>(30 s), then add a step"]
+  D --> F{"p99, failed calls,<br/>any load generator saturated?"}
+  F -- ok --> D
+  F -- "a limit broke twice" --> G["Limit: the last good step"]
+  F -- saturated --> H["Lower bound: the load generator<br/>ran out before the unit under test"]
+  K -- soak --> S["Hold a share of the measured limit<br/>for hours; memory, failed calls, restarts"]
+```
 
 ## Prerequisites
 
