@@ -216,6 +216,17 @@ const loadFields = {
   /** The UUT's SIP port on the single server; unused with `uut.helm`. */
   port: portSchema.default(5060),
   uac: uacSchema,
+  /**
+   * How many SIPp processes place the calls: the rate, the open-call limit
+   * and the `uac.users` file are split among them. SIPp is single-threaded,
+   * so one process tops out at about one core's worth of calls.
+   */
+  instances: z
+    .number()
+    .int({ error: "expected a whole number of SIPp instances" })
+    .min(1, { error: "expected 1 instance or more" })
+    .max(64, { error: "expected 64 instances or fewer" })
+    .default(1),
   hold: durationSchema.default("0s"),
   // What one SIPp "call" is, as a plural noun for the page: "calls", "messages".
   unit: z

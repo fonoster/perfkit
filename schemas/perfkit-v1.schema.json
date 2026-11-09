@@ -396,6 +396,12 @@
                     ],
                     "additionalProperties": false
                   },
+                  "instances": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
                   "hold": {
                     "default": "0s",
                     "type": "string",
@@ -733,6 +739,12 @@
                       "scenario"
                     ],
                     "additionalProperties": false
+                  },
+                  "instances": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
                   },
                   "hold": {
                     "default": "0s",

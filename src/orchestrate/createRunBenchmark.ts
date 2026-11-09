@@ -32,6 +32,8 @@ import { toKubeSamplerLines } from "./toKubeSamplerLines.js";
 import { countRegistered } from "./countRegistered.js";
 import {
   buildSippRoles,
+  splitUsers,
+  uacUsersFileOf,
   countUserRows,
   SIPP_PROJECT_DIR,
   type SippRoleSpec
@@ -58,6 +60,7 @@ import {
   SIPP_LANES,
   SIPP_START_TIMEOUT_MS,
   SIPP_TCP_NOFILE,
+  roleOf,
   type SippRole,
   STEP_GRACE_MS,
   UUT_UNRESPONSIVE
@@ -149,9 +152,23 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       samplerUut: name(`${benchmark.id}-sampler-uut`),
       samplerLoadgen: name(`${benchmark.id}-sampler-loadgen`),
       otelcol: name(`${benchmark.id}-otelcol`),
-      sipp: (role: string) => name(`${benchmark.id}-sipp-${role}`)
+      sipp: (role: string, instance = 1) =>
+        name(`${benchmark.id}-sipp-${roleOf(role as SippRole, instance)}`)
     };
-    const allRoles: SippRole[] = ["uac", "register", "uas"];
+    const instances = benchmark.load.instances;
+    const allSipp = [
+      ...(["register", "uas"] as SippRole[]).map((role) =>
+        containers.sipp(role)
+      ),
+      ...Array.from({ length: instances }, (_, i) =>
+        containers.sipp("uac", i + 1)
+      )
+    ];
+    if (instances > 1 && onCluster && cluster?.fixedIps) {
+      throw new AgentFailure(
+        `${benchmark.id} has load.instances ${instances}, which a local cluster's fixed SIPp addresses don't allow; run it with one instance or on DigitalOcean`
+      );
+    }
     const projectFile = (file: string) =>
       deps.fs.readFile(`${paths.project}/${file}`);
     const registerUsers = benchmark.load.register
@@ -196,7 +213,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       await run(
         "loadgen",
         removeContainersCommand([
-          ...allRoles.map((role) => containers.sipp(role)),
+          ...allSipp,
           containers.otelcol,
           containers.samplerLoadgen
         ])
@@ -235,8 +252,12 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       await Promise.all(
         [...roles]
           .reverse()
-          .map(({ role }) =>
-            run("loadgen", stopSippCommand(containers.sipp(role)), 120_000)
+          .map(({ role, instance }) =>
+            run(
+              "loadgen",
+              stopSippCommand(containers.sipp(role, instance)),
+              120_000
+            )
           )
       );
       if (benchmark.telemetry.otlp) {
@@ -547,7 +568,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     await start(
       "loadgen",
       containers.samplerLoadgen,
-      buildSamplerSpec("loadgen", [], prefix)
+      buildSamplerSpec("loadgen", [], prefix, benchmark.load.instances)
     );
   }
 
@@ -584,7 +605,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     benchmark: BenchmarkConfig,
     roles: SippRoleSpec[],
     rawDir: string,
-    container: (role: string) => string,
+    container: (role: string, instance?: number) => string,
     registerUsers: number
   ): Promise<{ startedMs: number; aborted: string | null }> {
     const benchmarkId = benchmark.id;
@@ -597,9 +618,14 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         "loadgen",
         dockerRunCommand({
           runId: state.runId,
-          name: container(spec.role),
+          name: container(spec.role, spec.instance),
           image: SIPP_IMAGE,
           detach: true,
+          // Several uac processes each get their own pid, so their trace
+          // files (<scenario>_<pid>_.csv) don't overwrite one another
+          ...(benchmark.load.instances > 1 && spec.role === "uac"
+            ? { pidHost: true }
+            : {}),
           platform: "linux/amd64",
           ...(cluster
             ? {
@@ -618,12 +644,30 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       );
       if (out.code !== 0) {
         throw new AgentFailure(
-          `could not start SIPp (${spec.role}): ${lastLine(out.stderr, `exit ${out.code}`)}`
+          `could not start SIPp (${roleOf(spec.role, spec.instance)}): ${lastLine(out.stderr, `exit ${out.code}`)}`
         );
       }
     };
-    const uac = roles.find(({ role }) => role === "uac") as SippRoleSpec;
+    const uacs = roles.filter(({ role }) => role === "uac");
+    const uac = uacs[0] as SippRoleSpec;
     const callees = roles.filter(({ role }) => role !== "uac");
+    if (uacs.length > 1 && benchmark.load.uac.users) {
+      const file = await deps.fs.readFile(
+        `${paths.project}/${benchmark.load.uac.users}`
+      );
+      const shares = (() => {
+        try {
+          return splitUsers(file, uacs.length);
+        } catch (err) {
+          throw new AgentFailure(`${benchmarkId}: ${(err as Error).message}`);
+        }
+      })();
+      await Promise.all(
+        shares.map((share, index) =>
+          deps.fs.writeFile(`${rawDir}/${uacUsersFileOf(index + 1)}`, share)
+        )
+      );
+    }
     await callees.reduce(
       (previous, spec) => previous.then(() => startRole(spec)),
       Promise.resolve()
@@ -646,7 +690,7 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       }
       await deps.log(`[${benchmarkId}] ${registerUsers} callees registered`);
     }
-    await startRole(uac);
+    await Promise.all(uacs.map((spec) => startRole(spec)));
     const startedMs = await sippStartTime(
       rawDir,
       uac.scenario,

@@ -326,6 +326,74 @@ describe("createAgent", () => {
     expect(progress).to.include("[one-soak] 200 callees registered");
   });
 
+  it("should start one SIPp per instance, each with its own share of the callers", async () => {
+    // Arrange
+    const dir = await mkdtemp(join(tmpdir(), "perfkit-instances-"));
+    await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
+    const yaml = await readFile(ROUTR_CONFIG, "utf8");
+    const edited = yaml.replace(
+      "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }",
+      "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }\n      instances: 3"
+    );
+    expect(edited).to.not.equal(yaml);
+    await writeFile(join(dir, "perfkit.yaml"), edited);
+    const setup = await detached(
+      [
+        "run",
+        "--config",
+        join(dir, "perfkit.yaml"),
+        "--target-version",
+        "2.31.5",
+        "--benchmarks",
+        "one-soak"
+      ],
+      soakRaw({ warmupS: 1800, afterS: 21600 }),
+      true
+    );
+    await withCallees(setup);
+    const callers = Array.from({ length: 9 }, (_, i) => `caller${i};pw${i}`);
+    await writeFile(
+      join(setup.hosts.roots.loadgen, "project", "one-soak", "callers.csv"),
+      ["SEQUENTIAL", ...callers, ""].join("\n")
+    );
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    const started = (name: string) =>
+      commands.filter((c) => c.includes(name) && c.includes("run -d"));
+    expect(started("-sipp-uac ")).to.have.length(1);
+    expect(started("-sipp-uac2 ")).to.have.length(1);
+    expect(started("-sipp-uac3 ")).to.have.length(1);
+    expect(started("-sipp-uac2 ")[0]).to.include("--pid host");
+    const raw = join(setup.hosts.roots.loadgen, "raw", "one-soak");
+    const share = async (n: number) =>
+      (await readFile(join(raw, `users-uac-${n}.csv`), "utf8"))
+        .trim()
+        .split("\n");
+    expect(await share(1)).to.deep.equal([
+      "SEQUENTIAL",
+      "caller0;pw0",
+      "caller3;pw3",
+      "caller6;pw6"
+    ]);
+    expect(await share(3)).to.deep.equal([
+      "SEQUENTIAL",
+      "caller2;pw2",
+      "caller5;pw5",
+      "caller8;pw8"
+    ]);
+    // every instance is stopped, and the cleanup knows them all
+    expect(
+      commands.some(
+        (c) => c.includes("docker kill -s USR1") && c.includes("-sipp-uac3")
+      )
+    ).to.equal(true);
+  });
+
   it("should abort a soak without starting its uac when the callees don't all register in time", async () => {
     // Arrange
     const setup = await detached(

@@ -103,4 +103,27 @@ describe("sumStatRows", () => {
       sumStatRows(rows, { fromMs: 15_000, toMs: 30_000 }).attempted
     ).to.equal(700);
   });
+
+  it("should add up each SIPp process's peak concurrent calls", () => {
+    // Arrange: two instances' rows, each peaking at its own time
+    const row = (pid: string, tMs: number, current: number) => ({
+      tMs,
+      periodStartMs: tMs - 10_000,
+      counters: { "OutgoingCall(P)": 10, CurrentCall: current },
+      pid
+    });
+    const rows = [
+      row("11", 20_000, 40),
+      row("11", 30_000, 50),
+      row("12", 20_100, 60),
+      row("12", 30_100, 30)
+    ];
+
+    // Act
+    const sums = sumStatRows(rows, { fromMs: 0, toMs: 60_000 });
+
+    // Assert
+    expect(sums.maxCurrentCalls).to.equal(110);
+    expect(sums.attempted).to.equal(40);
+  });
 });

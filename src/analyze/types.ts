@@ -29,6 +29,8 @@ export interface StatRow {
   periodStartMs: number;
   /** Every numeric column, by its header name, like `OutgoingCall(P)`. */
   counters: Record<string, number>;
+  /** The SIPp process that wrote the row, when several instances did. */
+  pid?: string;
 }
 
 /** A SIPp `-trace_stat` file. */

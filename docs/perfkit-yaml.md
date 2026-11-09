@@ -151,6 +151,7 @@ the other kind rejects them.
 | `load.register.users` | path | yes, if `register` is set | | The agents to register (CSV). |
 | `load.register.expires` | integer (seconds) | no | `300` | The registration lifetime. |
 | `load.uas.scenario` | path | yes, if `uas` is set | | `load.uas` is optional, for either kind: the SIPp scenario that answers calls. |
+| `load.instances` | integer, 1 to 64 | no | `1` | How many SIPp processes place the calls. SIPp runs on one core, so a single process tops out at about 350 calls/s over TCP and a few thousand over UDP, however big the load generator is. With `instances: N`, perfkit starts N uac processes on the load generator, each with 1/N of the rate (`-r`, `-rate_increase`, `-rate_max`) and of the open calls (`-l`), its own local port (5080, 5081, ...) and Call-ID prefix (`uac-`, `uac2-`, ...), and its own share of `uac.users` (every N-th row, so a user belongs to one process). The callees (`register`, `uas`) stay one process. The report sums all of them. A capacity step is invalid when any one instance is over 80% of its core; set `instances` to about the cores you want to use, leaving a few for the callees and the sampler. A local cluster (`--local`, fixed SIPp addresses) accepts only `1`. |
 | `load.hold` | duration | no | `0s` | How long each call stays up before BYE. |
 | `load.unit` | string | no | `calls` | What one SIPp call is, as a lowercase plural noun shown on the page (`calls`, `messages`). Copied into each report.json benchmark as `unit`. |
 | `load.rate.start` | number (calls/s) | *capacity*: yes | | The first step's rate. |
@@ -308,3 +309,12 @@ benchmarks:
     telemetry: { otlp: true, sampleRatio: 0.01 }
     thresholds: { memoryGrowthMBPerHour: 5, failedCallsPct: 0.1, restarts: 0 }
 ```
+
+### Scaling the load generator
+
+One c-16 load generator with `load.instances: 12` places about 12 times what one SIPp does.
+Beyond one machine the limits are network and source ports: over TCP each call holds a
+connection (`ip_local_port_range` is 1024-65535 with `tcp_tw_reuse`), so about 60,000
+connections per load generator address, which is `cps × (hold + TIME_WAIT)`. Several load
+generator droplets (`infra.loadgen.count`) are the next step and are not implemented yet; see
+the design in `docs/design-loadgen-count.md`.

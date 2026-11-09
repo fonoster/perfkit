@@ -28,8 +28,22 @@ export const SIPP_PROCESS = {
  * samplers of a server soak and a cluster soak running at the same time
  * tell them apart.
  */
-export function callIdOf(role: SippRole, prefix = "", runId?: string): string {
-  return `${prefix}${role}-${runId ? `${runId.toLowerCase()}-` : ""}%u-%p@%s`;
+export function callIdOf(
+  role: SippRole,
+  prefix = "",
+  runId?: string,
+  instance = 1
+): string {
+  return `${prefix}${roleOf(role, instance)}-${runId ? `${runId.toLowerCase()}-` : ""}%u-%p@%s`;
+}
+
+/**
+ * A role's name for one of its instances: the first is the role itself
+ * (`uac`), the others carry their number (`uac2`), so every instance has a
+ * Call-ID prefix the sampler can tell apart (`uac-` never matches `uac2-`).
+ */
+export function roleOf(role: SippRole, instance = 1): string {
+  return instance > 1 ? `${role}${instance}` : role;
 }
 
 /**

@@ -16,7 +16,8 @@ import { computeHops } from "./computeHops.js";
 import { listRawDir } from "./listRawDir.js";
 import {
   type MeasuredStep,
-  measureCapacityStep
+  measureCapacityStep,
+  uacProcessNames
 } from "./measureCapacityStep.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
 import { parseOtlpSpanLines } from "./parseOtlpSpans.js";
@@ -85,6 +86,7 @@ export function createAnalyzeCapacity(deps: AnalyzeDeps) {
         samples,
         udp,
         uutProcesses,
+        uacProcesses: uacProcessNames(benchmark.load.instances),
         unit
       })
     );

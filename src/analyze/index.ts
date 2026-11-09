@@ -33,7 +33,9 @@ export {
   MAX_SIPP_CPU_PCT,
   measureCapacityStep,
   MIN_ACHIEVED_RATIO,
-  SIPP_UAC_PROCESS
+  SIPP_UAC_PROCESS,
+  uacProcessName,
+  uacProcessNames
 } from "./measureCapacityStep.js";
 export { nearestRank } from "./nearestRank.js";
 export { parseOtlpSpanLines, parseOtlpSpans } from "./parseOtlpSpans.js";
