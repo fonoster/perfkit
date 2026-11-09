@@ -13,6 +13,8 @@ export interface LiveBenchmarkRecord {
   endedMs: number | null;
   /** The capacity steps evaluated so far. */
   points: LivePoint[];
+  /** A soak's rate, once the agent resolved `rate.fromCapacity`. */
+  cps?: number;
 }
 
 /** What the agent has recorded about the run so far. */
@@ -30,6 +32,8 @@ export interface LiveRecorder {
   started(id: string, ms: number): void;
   loadStarted(id: string, ms: number): void;
   point(id: string, point: LivePoint): void;
+  /** A soak's calls per second, resolved from `rate.fromCapacity`. */
+  rate?(id: string, cps: number): void;
   done(id: string, ms: number): void;
   finished(): void;
   failed(reason: string): void;

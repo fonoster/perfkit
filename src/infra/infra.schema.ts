@@ -97,6 +97,16 @@ const resolvedImageSchema = z.strictObject({
   ref: nonEmptyString
 });
 
+/** The Kubernetes cluster a run creates when a benchmark has `uut.helm`. */
+const clusterPlanSchema = z.strictObject({
+  name: z.string().regex(/^perfkit-\d{8}t\d{6}z-[0-9a-f]{7}$/, {
+    error: "expected perfkit-<run id in lowercase>"
+  }),
+  size: nonEmptyString,
+  nodes: z.number().int().positive(),
+  version: nonEmptyString
+});
+
 export const planSchema = z.strictObject({
   runId: runIdSchema,
   project: nonEmptyString,
@@ -120,7 +130,8 @@ export const planSchema = z.strictObject({
   benchmarks: z.array(benchmarkConfigSchema).min(1, {
     error: "expected at least one benchmark"
   }),
-  maxLifetime: durationSchema
+  maxLifetime: durationSchema,
+  cluster: clusterPlanSchema.optional()
 });
 
 export const provisionOptionsSchema = z.strictObject({
@@ -135,6 +146,11 @@ export const provisionOptionsSchema = z.strictObject({
 export const provisionInputSchema = z.strictObject({
   plan: planSchema,
   options: provisionOptionsSchema.default({ authorizedKeys: [] })
+});
+
+const createdClusterSchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString
 });
 
 const createdDropletSchema = z.strictObject({
@@ -159,7 +175,8 @@ export const runResourcesSchema = z.object({
     .optional(),
   vpc: z.object({ id: nonEmptyString, name: nonEmptyString }).optional(),
   droplets: z.array(createdDropletSchema.loose()),
-  firewall: z.object({ id: nonEmptyString, name: nonEmptyString }).optional()
+  firewall: z.object({ id: nonEmptyString, name: nonEmptyString }).optional(),
+  cluster: createdClusterSchema.loose().optional()
 });
 
 export const withRunInputSchema = z.strictObject({

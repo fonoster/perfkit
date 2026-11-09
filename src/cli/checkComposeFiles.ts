@@ -19,7 +19,7 @@ export async function checkComposeFiles(
     ...new Set(
       config.benchmarks
         .filter(({ id }) => !selected || selected.includes(id))
-        .map(({ uut }) => uut.compose)
+        .flatMap(({ uut }) => ("compose" in uut ? [uut.compose] : []))
     )
   ];
   const lines = await Promise.all(

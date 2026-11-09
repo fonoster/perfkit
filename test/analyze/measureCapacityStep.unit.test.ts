@@ -12,12 +12,29 @@ import {
   capacityRaw,
   fakeDeps,
   RAW_DIR,
+  samplerLines,
   START_MS,
   STEP_MS
 } from "./builders.js";
 
-async function step(spec: Parameters<typeof capacityRaw>[0][number]) {
+/** A callee SIPp at `pct`% of one core, sampled every 10 s over the step. */
+function calleeAt(name: string, pct: number): string[] {
+  return Array.from({ length: 7 }, (_, tick) =>
+    samplerLines(START_MS + tick * 10_000, [
+      { host: "loadgen", name, cpuTicks: Math.round(tick * pct * 10) }
+    ])
+  ).flat();
+}
+
+async function step(
+  spec: Parameters<typeof capacityRaw>[0][number],
+  extraSampler: string[] = []
+) {
   const files = capacityRaw([spec]);
+  files["sampler.jsonl"] = [
+    (files["sampler.jsonl"] as string).trimEnd(),
+    ...extraSampler
+  ].join("\n");
   const uac = await readSippResults(
     fakeDeps(files),
     RAW_DIR,
@@ -39,6 +56,33 @@ async function step(spec: Parameters<typeof capacityRaw>[0][number]) {
 }
 
 describe("measureCapacityStep", () => {
+  it("should mark a step invalid when the callee SIPp saturates", async () => {
+    // Act
+    const register = await step(
+      { offeredCps: 40, attempted: 2400 },
+      calleeAt("sipp-register", 86)
+    );
+    const uas = await step(
+      { offeredCps: 40, attempted: 2400 },
+      calleeAt("sipp-uas", 90)
+    );
+    const below = await step(
+      { offeredCps: 40, attempted: 2400 },
+      calleeAt("sipp-register", 80)
+    );
+
+    // Assert
+    expect(register.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (sipp-register at 86% of one core)"
+    );
+    expect(register.step.valid).to.equal(false);
+    expect(register.step.sippCpuPct).to.equal(10);
+    expect(uas.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (sipp-uas at 90% of one core)"
+    );
+    expect(below.invalidReason).to.equal(null);
+  });
+
   it("should measure a valid step", async () => {
     // Act
     const measured = await step({

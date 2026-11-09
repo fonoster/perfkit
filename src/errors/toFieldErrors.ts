@@ -18,14 +18,10 @@ export interface FieldError {
  * error per key, at the key's own path.
  */
 export function toFieldErrors(issues: ReadonlyArray<z.core.$ZodIssue>) {
-  const flat = issues.flatMap<{
+  const flat = issues.flatMap(expandUnion).flatMap<{
     issue: z.core.$ZodIssue;
     path: PropertyKey[];
-  }>((issue) =>
-    issue.code === "unrecognized_keys"
-      ? issue.keys.map((key) => ({ issue, path: [...issue.path, key] }))
-      : [{ issue, path: [...issue.path] }]
-  );
+  }>((issue) => (issue.code === "unrecognized_keys" ? issue.keys.map((key) => ({ issue, path: [...issue.path, key] })) : [{ issue, path: [...issue.path] }]));
   const sorted = [...flat].sort((a, b) => comparePaths(a.path, b.path));
   const errors: FieldError[] = sorted.map(({ issue, path }) => ({
     field: formatPath(path),
@@ -39,6 +35,44 @@ export function toFieldErrors(issues: ReadonlyArray<z.core.$ZodIssue>) {
           other.field === error.field && other.message === error.message
       ) === index
   );
+}
+
+/**
+ * An object that matches no shape of a union, like a `uut` with `helm` and
+ * a missing `pods`, gets the issues of the shape it is closest to: the one
+ * with the fewest issues, where an unknown key counts twice, being the
+ * surest sign of the wrong shape. When two shapes tie, it stays one
+ * `does not match any allowed shape` issue.
+ */
+function expandUnion(issue: z.core.$ZodIssue): z.core.$ZodIssue[] {
+  if (issue.code !== "invalid_union") return [issue];
+  const { errors, input } = issue as z.core.$ZodIssue & {
+    errors?: z.core.$ZodIssue[][];
+    discriminator?: string;
+  };
+  if (
+    (issue as { discriminator?: string }).discriminator !== undefined ||
+    !errors ||
+    errors.length < 2 ||
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input)
+  ) {
+    return [issue];
+  }
+  const weight = (branch: z.core.$ZodIssue[]) =>
+    branch.reduce(
+      (sum, item) =>
+        sum + (item.code === "unrecognized_keys" ? 2 * item.keys.length : 1),
+      0
+    );
+  const weights = errors.map(weight);
+  const best = Math.min(...weights);
+  if (weights.filter((value) => value === best).length > 1) return [issue];
+  const branch = errors[weights.indexOf(best)] ?? [];
+  return branch
+    .map((item) => ({ ...item, path: [...issue.path, ...item.path] }))
+    .flatMap(expandUnion);
 }
 
 function comparePaths(

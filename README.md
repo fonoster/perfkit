@@ -12,6 +12,10 @@ publishes the results in one format.
   region and private VPC: the unit under test, and a load generator that drives it with SIPp.
   The images are pinned by digest when the run starts, and both droplets are deleted on every
   exit path.
+- **A Kubernetes cluster when a benchmark asks for one.** A benchmark with `uut.helm` installs a
+  Helm chart on a DOKS cluster created for the run in the same VPC (kind with MetalLB on
+  `--local`), and the page labels each benchmark with its target. The cluster is deleted with its
+  load balancers and volumes on every exit path.
 - **One report format.** Every run writes a `report.json` (`schema: perfkit/report/v1`), and
   each project keeps a `runs.json` history index (`schema: perfkit/runs/v1`). The formats are
   the same for every project, so runs compare across releases and projects.
@@ -28,7 +32,8 @@ are in [schemas/](schemas/).
 - Node 22 or later, and npm 11 to run perfkit from a git tag (see below).
 - `ssh`, `scp` and `ssh-keygen` (OpenSSH) on the machine that runs `perfkit run` or `perfkit
   collect`. `perfkit run --local` needs Docker instead, with host networking (on Docker Desktop,
-  turn on host networking in its settings).
+  turn on host networking in its settings), and `kind` on the PATH for a benchmark with
+  `uut.helm`.
 - For `perfkit run` and `perfkit sweep`, a DigitalOcean API token in `DIGITALOCEAN_TOKEN`. Create
   it with custom scopes, and grant these, under DigitalOcean's scope names:
 
@@ -39,6 +44,7 @@ are in [schemas/](schemas/).
   | Firewall | `firewall:create`, `firewall:read`, `firewall:update`, `firewall:delete` |
   | SSH key | `ssh_key:create`, `ssh_key:read`, `ssh_key:delete` |
   | Tag | `tag:create`, `tag:read`, `tag:delete` |
+  | Kubernetes, for `uut.helm` | `kubernetes:create`, `kubernetes:read`, `kubernetes:delete`, `kubernetes:access_cluster`, and `load_balancer:delete`, `block_storage:delete` for the cluster's own load balancers and volumes |
 
   DigitalOcean adds the read scopes these depend on when you pick them. `perfkit run --dry-run`
   needs no token.
@@ -127,13 +133,18 @@ the end. In `infra.region` of `perfkit.yaml`, it creates, in this order:
    collide;
 3. two `ubuntu-22-04-x64` droplets in it, `perfkit-<run id>-uut` and
    `perfkit-<run id>-loadgen`, tagged `perfkit` and `perfkit-run-<run id>`;
-4. a firewall, `perfkit-<run id>`: from the VPC: all ports (tcp and udp) and icmp, so the load
-   generator reaches the server's API and the server reaches the callees; SSH (22) from this machine's public IP (from `https://api.ipify.org`) and from the VPC, where the agent on the load generator reaches the server under test.
+4. when a selected benchmark has `uut.helm`, a DOKS cluster, `perfkit-<run id in lowercase>`, of
+   `infra.cluster.nodes` × `infra.cluster.size` in the VPC, with the same tags;
+5. a firewall, `perfkit-<run id>`: from the VPC: all ports (tcp and udp) and icmp, so the load
+   generator reaches the server's API and the server reaches the callees; SSH (22) from this machine's public IP (from `https://api.ipify.org`) and from the VPC, where the agent on the load generator reaches the server under test; with a cluster, all tcp and udp ports from its node droplets, so its pods reach the callees.
 
 Both droplets get Docker Engine with the compose plugin, 25 MiB socket buffers
 (`net.core.rmem_max`, `wmem_max`, `rmem_default`, `wmem_default`) and 1048576 open files, through
 cloud-init, which holds no secrets. perfkit waits until both droplets are active and
-`cloud-init status --wait` has finished over SSH, for at most 10 minutes. Every image runs by the
+`cloud-init status --wait` has finished over SSH, for at most 10 minutes, and, at the same time,
+for the cluster to be running, for at most 20 minutes. The cluster's kubeconfig, valid for
+`infra.maxLifetime`, goes to the load generator only (`/opt/perfkit/keys/kubeconfig`, mode 600),
+never into run.json, a log or the report. Every image runs by the
 digest its tag had when the run started.
 
 | Flag | Default | Meaning |
@@ -179,8 +190,8 @@ $ echo $?
 A capacity benchmark runs at most `(max - start) / step + 1` steps of `every` each; a soak runs
 its `warmup` plus its `duration`.
 
-**Teardown.** perfkit deletes everything the run created, in reverse order (firewall, droplets,
-VPC, SSH key), on every exit path: success, a failed benchmark, an error, a create that failed
+**Teardown.** perfkit deletes everything the run created, in reverse order (firewall, droplets
+and the cluster with its load balancers and volumes, VPC, SSH key), on every exit path: success, a failed benchmark, an error, a create that failed
 part-way, and Ctrl-C, SIGINT or SIGTERM. DigitalOcean deletes only an empty VPC, so perfkit waits
 up to 5 minutes for the VPC's members to go before it deletes it. Each delete is tried 3 times.
 The one exception is `--detach`: once the agent on the droplets has started, the run keeps its
@@ -191,12 +202,15 @@ holds while `run` follows the run: it deletes everything at the end, as `perfkit
 to `/opt/perfkit/project` on both, and its own package (`dist/`, `package.json` and the
 production `node_modules`) to `/opt/perfkit/agent` on the load generator. It then starts the
 agent there, `perfkit agent`, as a detached `node:22-alpine` container with the Docker socket
-mounted, so the run goes on if this machine disconnects. The agent runs every benchmark in order:
+mounted, so the run goes on if this machine disconnects. The agent runs the capacity benchmarks
+one after another, then the soaks: those of different targets (the server and the cluster) at the
+same time, those of one target one after another. For a server benchmark:
 `docker compose up` of the benchmark's compose file on the UUT, a wait until every service is
 running (and healthy, with a healthcheck) for at most 5 minutes, the setup script, the samplers,
 the OpenTelemetry Collector for telemetry, and SIPp. A capacity ramp is checked step by step and
 SIPp stops at the first step that breaks a rule or doesn't count. Then `docker compose down`, and
-the next benchmark. [docs/project-setup.md](docs/project-setup.md) is what a project's compose
+the next benchmark. A cluster benchmark installs its chart instead (see
+[docs/perfkit-yaml.md](docs/perfkit-yaml.md#a-cluster-benchmark)) and ends with `helm uninstall`. [docs/project-setup.md](docs/project-setup.md) is what a project's compose
 files, setup script and SIPp scenarios get.
 
 Without `--detach`, `run` then follows the run like `perfkit collect` and prints its progress:
@@ -348,9 +362,10 @@ perfkit sweep [--config <perfkit.yaml>] [--run <run-id>] [--older-than <duration
 ```
 
 The backstop for a run that could not tear down, for example a killed CI job. Run it on a
-schedule. It deletes droplets tagged `perfkit` and named `perfkit-<run id>-uut` or `-loadgen`
-that are older than `--older-than`, and then the firewall, VPC and SSH key named
-`perfkit-<run id>` of those runs. It touches nothing else: not an untagged droplet, and never the
+schedule. It deletes droplets tagged `perfkit` and named `perfkit-<run id>-uut` or `-loadgen`,
+and Kubernetes clusters tagged `perfkit` and named `perfkit-<run id in lowercase>` (with their
+load balancers and volumes), that are older than `--older-than`, and then the firewall, VPC and
+SSH key named `perfkit-<run id>` of those runs. It touches nothing else: not an untagged droplet, and never the
 `perfkit-shared` key.
 
 | Flag | Default | Meaning |
@@ -385,7 +400,12 @@ failed call is one SIPp counts as failed, and CPU is in % of one core, so 100 is
 
 ### Capacity
 
-SIPp adds load in steps, such as 50 more calls/s every minute. For each step:
+SIPp adds load in steps, such as 50 more calls/s every minute. With callees (`load.register`),
+the ramp starts only once every callee has registered, with the soak's timeout (`users / 20` +
+60 s) and abort reason. The uac gives up on a message it expects after 10 s, and a call that
+timed out counts as failed; with a hold, a call's teardown failure is counted when it happens, up
+to `hold` + 10 s after the call starts, so `every` should be at least 4 × (hold + 10 s). For each
+step:
 
 - Its latency counts the calls whose request was **sent** in the step, even when the answer came
   in the next one.
@@ -400,7 +420,8 @@ SIPp adds load in steps, such as 50 more calls/s every minute. For each step:
 perfkit checks the steps in order:
 
 1. **Is the measurement valid?** A step is invalid when the load generator, not the server, was
-   the bottleneck: SIPp used more than 80% of one core, placed less than 95% of the offered rate,
+   the bottleneck: any SIPp role (the uac, or the callees `sipp-register` and `sipp-uas`) used
+   more than 80% of one core, placed less than 95% of the offered rate,
    placed more than 105% of it (a burst of calls it owed from earlier steps), or the load
    generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
    names the step and the cause, and no limit is published.
@@ -418,7 +439,12 @@ both machines. They are reported and never change the verdict.
 
 ### Soak
 
-A soak holds a fixed rate for hours to find leaks.
+A soak holds a fixed rate for hours to find leaks. With `rate.fromCapacity`, the rate is
+`fraction ×` the limit that capacity benchmark measured earlier in the same run, rounded down
+(when it was inconclusive because the load generator gave out, the highest step before that, if
+every one passed, as a lower bound), or `fallbackCps` when it found none; the progress log and
+`load.rateSource` in report.json say which.
+On the cluster, a restart is a container restart of a sampled pod (its restart count went up).
 
 - **Warm-up excluded.** Nothing measured during `warmup` counts toward any rule.
 - **Too little data.** When the samples after the warm-up cover less than 90% of `duration`, the

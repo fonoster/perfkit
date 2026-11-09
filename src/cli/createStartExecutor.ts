@@ -12,7 +12,8 @@ import type { BenchmarkExecutor, CliDeps } from "./types.js";
 /**
  * The real executor: it keeps the run-only login key in
  * `~/.perfkit/runs/<id>/` (unless PERFKIT_SSH_KEY is the login), copies the
- * project and perfkit to the droplets, starts the agent and hands off.
+ * project and perfkit to the droplets (and, with a cluster, its charts and
+ * kubeconfig to the load generator), starts the agent and hands off.
  */
 export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
   const { infra } = deps;
@@ -62,6 +63,27 @@ export function createStartExecutor(deps: CliDeps): BenchmarkExecutor {
       projectDir: dirname(options.configPath),
       out: options.out,
       agentKey: options.agentKey,
+      ...(run.provisionedCluster
+        ? {
+            cluster: {
+              provider: "digitalocean" as const,
+              name: run.provisionedCluster.name,
+              size: run.provisionedCluster.size,
+              nodes: run.provisionedCluster.nodes,
+              version: run.provisionedCluster.version,
+              network: "host",
+              // The load balancer is public: SIPp sends from, and the
+              // callees register, the load generator's public address.
+              sippIps: {
+                uac: run.loadgen.publicIp,
+                register: run.loadgen.publicIp,
+                uas: run.loadgen.publicIp
+              },
+              fixedIps: false
+            },
+            kubeconfig: run.provisionedCluster.kubeconfig
+          }
+        : {}),
       ...(options.live ? { live: options.live } : {}),
       ...(infra.env.NGROK_AUTHTOKEN
         ? { ngrokToken: infra.env.NGROK_AUTHTOKEN }

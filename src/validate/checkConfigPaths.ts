@@ -22,21 +22,25 @@ export async function checkConfigPaths(
       (benchmark, i): Array<[string, string | undefined]> => {
         const at = `benchmarks[${i}]`;
         const load = benchmark.load;
+        const { uut } = benchmark;
+        const uutPaths: Array<[string, string | undefined]> =
+          "helm" in uut
+            ? [
+                [`${at}.uut.helm.chart`, `${uut.helm.chart}/Chart.yaml`],
+                [`${at}.uut.helm.values`, uut.helm.values],
+                [`${at}.uut.helm.setup`, uut.helm.setup]
+              ]
+            : [
+                [`${at}.uut.compose`, uut.compose],
+                [`${at}.uut.setup`, uut.setup]
+              ];
         return [
-          [`${at}.uut.compose`, benchmark.uut.compose],
-          [`${at}.uut.setup`, benchmark.uut.setup],
+          ...uutPaths,
           [`${at}.load.uac.scenario`, load.uac.scenario],
           [`${at}.load.uac.users`, load.uac.users],
-          ...(benchmark.kind === "soak"
-            ? ([
-                [
-                  `${at}.load.register.scenario`,
-                  benchmark.load.register?.scenario
-                ],
-                [`${at}.load.register.users`, benchmark.load.register?.users],
-                [`${at}.load.uas.scenario`, benchmark.load.uas?.scenario]
-              ] as Array<[string, string | undefined]>)
-            : [])
+          [`${at}.load.register.scenario`, load.register?.scenario],
+          [`${at}.load.register.users`, load.register?.users],
+          [`${at}.load.uas.scenario`, load.uas?.scenario]
         ];
       }
     )

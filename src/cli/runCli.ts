@@ -42,12 +42,15 @@ Exit codes:
 
 const RUN_HELP = `
 This creates two billable dedicated-CPU DigitalOcean droplets (the sizes in
-perfkit.yaml) and deletes them at the end, on every exit path. If a run is
-killed before it can delete them, perfkit sweep deletes them later.
+perfkit.yaml) and, when a benchmark has uut.helm, a DOKS cluster of
+infra.cluster.nodes droplets, and deletes them at the end (the cluster with
+its load balancers and volumes), on every exit path. If a run is killed
+before it can delete them, perfkit sweep deletes them later.
 
 With --local it creates nothing on DigitalOcean: the server under test and
 the load generator run on this machine's Docker, with host networking, and
-the run needs no token. With --detach it returns once the agent on the load
+the run needs no token. A helm benchmark runs on a kind cluster with
+MetalLB (needs kind on the PATH), deleted at the end. With --detach it returns once the agent on the load
 generator has started; perfkit collect <run id> finishes it.
 
 Environment:
@@ -61,8 +64,9 @@ ${EXIT_CODES_HELP}`;
 
 const SWEEP_HELP = `
 Deletes only droplets tagged perfkit and named perfkit-<run id>-uut or
--loadgen, and the firewall, VPC and SSH key named perfkit-<run id> of those
-runs. It never deletes the perfkit-shared SSH key.
+-loadgen, Kubernetes clusters tagged perfkit and named perfkit-<run id> (with
+their load balancers and volumes), and the firewall, VPC and SSH key named
+perfkit-<run id> of those runs. It never deletes the perfkit-shared SSH key.
 
 Environment:
   DIGITALOCEAN_TOKEN  required. Never printed.
@@ -249,7 +253,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   program
     .command("sweep")
     .description(
-      "Delete the droplets, firewalls, VPCs and SSH keys that lost runs left behind."
+      "Delete the droplets, Kubernetes clusters, firewalls, VPCs and SSH keys that lost runs left behind."
     )
     .option(
       "--config <perfkit.yaml>",

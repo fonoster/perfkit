@@ -4,7 +4,8 @@
 
 perfkit runs benchmarks for Fonoster projects (Routr first, then Roomr and Fonoster) and
 publishes one report format for all of them. It creates two DigitalOcean droplets per run (the
-unit under test and a load generator), drives the load, collects the results into a
+unit under test and a load generator), plus a DOKS cluster when a benchmark has `uut.helm` (kind
+with `--local`), drives the load, collects the results into a
 `report.json` (schema `perfkit/report/v1`), deletes the droplets, and renders a branded static
 HTML report page. Each project keeps only its benchmark definitions in a `perf/` folder
 (`perf/perfkit.yaml`) and pins a perfkit release. The design of the report page lives in Routr:
@@ -60,9 +61,11 @@ Breaking (a major release):
 
 ## Risk hotspots
 
-- Droplet teardown (`src/infra`): a missed delete leaves dedicated-CPU droplets billing.
+- Droplet and cluster teardown (`src/infra`, `src/cli/localTeardown.ts`): a missed delete leaves
+  dedicated-CPU droplets, a DOKS node pool or its load balancers billing.
 - `.github/workflows/run.yaml`: it receives `DIGITALOCEAN_TOKEN`; the token never goes onto a
-  droplet, into a log, `report.json` or the HTML.
+  droplet, into a log, `report.json` or the HTML. The cluster's kubeconfig goes to the load
+  generator's keys directory only.
 
 ## Release
 
@@ -82,3 +85,6 @@ Breaking (a major release):
   release. Report copy never says "every release".
 - 2026-11-03: Reports are public static pages on each project's GitHub Pages under
   `/benchmarks`, published to the gh-pages branch, never through a push to main.
+- 2026-11-08: Kubernetes benchmarks run over TCP: DigitalOcean's REGIONAL_NETWORK load balancer
+  drops UDP datagrams over 1,424 bytes. Locally the cluster is kind with MetalLB, whose L2 load
+  balancer keeps the client address and the Service port as DOKS's does.

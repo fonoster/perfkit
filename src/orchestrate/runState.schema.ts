@@ -36,6 +36,31 @@ export const liveSettingsSchema = z.strictObject({
 
 export const runModeSchema = z.enum(["digitalocean", "local"]);
 
+const sippIpsSchema = z.strictObject({
+  uac: z.ipv4(),
+  register: z.ipv4(),
+  uas: z.ipv4()
+});
+
+/**
+ * The Kubernetes cluster of the run's helm benchmarks. The kubeconfig is at
+ * `<root>/keys/kubeconfig` on the load generator, never in run.json.
+ */
+export const runClusterStateSchema = z.strictObject({
+  provider: z.enum(["digitalocean", "kind"]),
+  name: nonEmptyString,
+  /** The node droplet size; `local` for kind. */
+  size: nonEmptyString,
+  nodes: positiveNumber.int({ error: "expected a whole number" }),
+  version: nonEmptyString,
+  /** The Docker network SIPp and the Kubernetes tools join: host or kind. */
+  network: nonEmptyString,
+  /** The address each SIPp role binds to (`-i`) for a cluster benchmark. */
+  sippIps: sippIpsSchema,
+  /** kind only: SIPp joins the network with these fixed addresses. */
+  fixedIps: z.boolean()
+});
+
 export const runStateSchema = z.strictObject({
   runId: runIdSchema,
   mode: runModeSchema,
@@ -65,7 +90,8 @@ export const runStateSchema = z.strictObject({
     otelcol: nonEmptyString.optional()
   }),
   /** Where live.json is served, and the static ngrok domain, if any. */
-  live: liveSettingsSchema.optional()
+  live: liveSettingsSchema.optional(),
+  cluster: runClusterStateSchema.optional()
 });
 
 const benchmarkStatusSchema = z.strictObject({
@@ -91,6 +117,7 @@ export const agentInputSchema = z.strictObject({
 export type LiveSettings = z.infer<typeof liveSettingsSchema>;
 export type RunMode = z.infer<typeof runModeSchema>;
 export type RunState = z.infer<typeof runStateSchema>;
+export type RunClusterState = z.infer<typeof runClusterStateSchema>;
 export type RunStatus = z.infer<typeof runStatusSchema>;
 export type MachineInfo = z.infer<typeof machineInfoSchema>;
 export type AgentInput = z.infer<typeof agentInputSchema>;

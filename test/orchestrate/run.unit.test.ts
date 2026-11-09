@@ -60,7 +60,7 @@ describe("perfkit run (orchestration)", () => {
       / 10\.116\.0\.\d+:5062 -sf \/project\/sipp-uas\/uac_message\.xml -i 10\.116\.0\.\d+ -p 5080 /
     );
     expect(uac).to.include(
-      "-r 50 -rp 1000 -rate_increase 50 -rate_interval 60 -rate_max 200 -no_rate_quit -l 2000 -d 0"
+      "-r 50 -rp 1000 -rate_increase 50 -rate_interval 60 -rate_max 200 -no_rate_quit -recv_timeout 10000 -l 4000 -d 0"
     );
     expect(uac).to.include(
       "-t u1 -buff_size 4194304 -trace_rtt -rtt_freq 10 -trace_stat -fd 10 -trace_counts -trace_err -trace_error_codes"

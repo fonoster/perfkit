@@ -18,17 +18,21 @@ import {
   verdictPill
 } from "../verdicts.js";
 
-/** `01 · CAPACITY`, the title with its pill, and a meta line. */
+/**
+ * `01 · CAPACITY · Single server`, the title with its pill, and a meta
+ * line. The target is left out when the report does not name it.
+ */
 export function sectionHead(
   benchmark: BenchmarkResult,
   index: number,
   meta: string,
-  sub = ""
+  sub = "",
+  target: string | null = null
 ): string {
   const number = String(index + 1).padStart(2, "0");
   return `<div class="section-head">
 <div class="section-head-main">
-<p class="eyebrow">${number} · ${esc(benchmark.kind.toUpperCase())}</p>
+<p class="eyebrow">${number} · ${esc(benchmark.kind.toUpperCase())}${target ? ` · <span class="target">${esc(target)}</span>` : ""}</p>
 <div class="title-row"><h2 id="${esc(benchmark.id)}-title" class="section-title">${esc(benchmark.title)}</h2>${verdictPill(benchmark.verdict)}</div>
 ${sub ? `<p class="section-sub">${esc(sub)}</p>` : ""}
 </div>

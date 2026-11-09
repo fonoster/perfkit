@@ -8,9 +8,11 @@ import { sumStatRows } from "../analyze/sumStatRows.js";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import type { Now } from "../infra/index.js";
 import { runPaths } from "../orchestrate/paths.js";
+import { toKubeSamplerLines } from "../orchestrate/toKubeSamplerLines.js";
 import type { RunState } from "../orchestrate/runState.schema.js";
 import type { AgentFs, HostShell } from "../orchestrate/types.js";
 import {
+  isHelmUut,
   type Live,
   liveSchema,
   type SoakBenchmarkConfig
@@ -51,6 +53,13 @@ export function createWriteLive(deps: {
   const progress = new Map<string, SoakProgress>();
 
   const readSampler = async (id: string): Promise<string> => {
+    const benchmark = state.plan.benchmarks.find((b) => b.id === id);
+    if (benchmark && isHelmUut(benchmark.uut)) {
+      // The cluster sampler writes on the load generator, this machine.
+      return toKubeSamplerLines(
+        await fs.readFile(`${paths.rawOf(id)}/kube-uut.jsonl`)
+      );
+    }
     const file = `${paths.rawOf(id)}/sampler-uut.jsonl`;
     if (state.mode === "local") return fs.readFile(file);
     const seen = sampler.get(id) ?? { offset: 0, text: "" };

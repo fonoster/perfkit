@@ -2,6 +2,7 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import type { BenchmarkConfig } from "../schemas/index.js";
+import { imageEnvOf } from "./imageEnvOf.js";
 import type { RunState } from "./runState.schema.js";
 
 /**
@@ -15,12 +16,7 @@ export function buildComposeEnv(
   state: RunState,
   benchmark: BenchmarkConfig
 ): Record<string, string> {
-  const images = Object.fromEntries(
-    state.plan.images.map((image) => [
-      `PERFKIT_IMAGE_${image.key.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`,
-      image.ref
-    ])
-  );
+  const images = imageEnvOf(state.plan.images);
   const telemetry: Record<string, string> = benchmark.telemetry.otlp
     ? {
         PERFKIT_OTLP_ENDPOINT: `http://${state.hosts.loadgenIp}:4318`,

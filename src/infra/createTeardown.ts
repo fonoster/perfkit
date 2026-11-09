@@ -7,6 +7,7 @@ import {
   DELETE_ATTEMPTS,
   DELETE_BACKOFF_MS,
   POLL_INTERVAL_MS,
+  VPC_EMPTY_AFTER_CLUSTER_TIMEOUT_MS,
   VPC_EMPTY_TIMEOUT_MS
 } from "./constants.js";
 import { messageOf } from "./errors.js";
@@ -27,11 +28,13 @@ type Outcome =
 
 /**
  * Creates `teardown(resources)`: it deletes what a run created, in reverse
- * order: the firewall, the droplets, the run's tag, the VPC, and the SSH key
- * unless it is the shared one. Each delete is tried 3 times with backoff.
- * DigitalOcean deletes only an empty VPC, so it first polls the VPC's members
- * until there are none, for at most 5 minutes; it skips the VPC when a
- * droplet in it could not be deleted.
+ * order: the firewall, the droplets and the Kubernetes cluster (with its
+ * load balancers and volumes) at the same time, the run's tag, the VPC, and
+ * the SSH key unless it is the shared one. Each delete is tried 3 times with
+ * backoff. DigitalOcean deletes only an empty VPC, so it first polls the
+ * VPC's members until there are none, for at most 5 minutes (10 after a
+ * cluster); it skips the VPC when a droplet or the cluster in it could not
+ * be deleted.
  *
  * It never throws for a failed delete: the result lists every failure, and
  * the caller exits 3 when there is one.
@@ -68,7 +71,8 @@ export function createTeardown(deps: {
 
   const waitEmpty = async (
     vpcId: string,
-    deadline: number
+    deadline: number,
+    minutes: number
   ): Promise<string | null> => {
     const members = await deps.client
       .listVpcMembers(vpcId)
@@ -76,11 +80,11 @@ export function createTeardown(deps: {
     if (Array.isArray(members) && members.length === 0) return null;
     if (deps.now() >= deadline) {
       return Array.isArray(members)
-        ? `after 5 minutes: it still has ${members.length} member${members.length === 1 ? "" : "s"}`
-        : `after 5 minutes: ${messageOf(members)}`;
+        ? `after ${minutes} minutes: it still has ${members.length} member${members.length === 1 ? "" : "s"}`
+        : `after ${minutes} minutes: ${messageOf(members)}`;
     }
     await deps.sleep(POLL_INTERVAL_MS);
-    return waitEmpty(vpcId, deadline);
+    return waitEmpty(vpcId, deadline, minutes);
   };
 
   const fn = async (
@@ -97,15 +101,24 @@ export function createTeardown(deps: {
       );
     }
 
-    const droplets = await Promise.all(
-      resources.droplets.map(({ id, name }) =>
+    const cluster = resources.cluster;
+    const [clusterOutcome, ...droplets] = await Promise.all([
+      cluster
+        ? attempt({ kind: "cluster", id: cluster.id, name: cluster.name }, () =>
+            deps.client.deleteKubernetesCluster(cluster.id)
+          )
+        : Promise.resolve(null),
+      ...resources.droplets.map(({ id, name }) =>
         attempt({ kind: "droplet", id: String(id), name }, () =>
           deps.client.deleteDroplet(id)
         )
       )
-    );
-    outcomes.push(...droplets);
-    const dropletsGone = droplets.every((outcome) => outcome.ok);
+    ]);
+    const dropletOutcomes = droplets as Outcome[];
+    outcomes.push(...dropletOutcomes);
+    if (clusterOutcome) outcomes.push(clusterOutcome);
+    const dropletsGone = dropletOutcomes.every((outcome) => outcome.ok);
+    const clusterGone = clusterOutcome === null || clusterOutcome.ok;
 
     if (resources.runTag && dropletsGone) {
       const name = resources.runTag;
@@ -116,10 +129,17 @@ export function createTeardown(deps: {
       );
     }
 
-    if (resources.vpc && dropletsGone) {
+    if (resources.vpc && dropletsGone && clusterGone) {
       const { id, name } = resources.vpc;
       const resource: DeletedResource = { kind: "VPC", id, name };
-      const notEmpty = await waitEmpty(id, deps.now() + VPC_EMPTY_TIMEOUT_MS);
+      const waitMs = cluster
+        ? VPC_EMPTY_AFTER_CLUSTER_TIMEOUT_MS
+        : VPC_EMPTY_TIMEOUT_MS;
+      const notEmpty = await waitEmpty(
+        id,
+        deps.now() + waitMs,
+        waitMs / 60_000
+      );
       outcomes.push(
         notEmpty === null
           ? await attempt(resource, () => deps.client.deleteVpc(id))

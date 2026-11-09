@@ -35,6 +35,9 @@ export function createLiveRecorder(): LiveRecorder {
     point: (id, point) => {
       of(id).points.push(point);
     },
+    rate: (id, cps) => {
+      of(id).cps = cps;
+    },
     done: (id, ms) => {
       of(id).endedMs = ms;
     },

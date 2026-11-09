@@ -57,6 +57,7 @@ Rules for both files:
 | `run.infra.uut`, `run.infra.loadgen` | object | `size` (slug), `vcpus` and `memoryMB` of each droplet. |
 | `run.infra.os` | string | The droplets' OS, like `Ubuntu 24.04`. |
 | `run.infra.docker` | string | The droplets' Docker version. |
+| `run.infra.cluster` | object | Optional: only when the run had a Kubernetes cluster. `provider` (`digitalocean` or `kind`), `nodes`, `size` (the node slug, `local` for kind) and `version` (like `1.33.1-do.0`). |
 | `run.images` | map of name to image | Each image as run, pinned by digest: `name:tag@sha256:<64 hex>`. |
 | `run.tools.perfkit` | string | Required. |
 | `run.tools.sipp` | string | Required. |
@@ -77,6 +78,7 @@ Every benchmark carries:
 | :--- | :--- | :--- |
 | `id`, `kind`, `title` | string | From perfkit.yaml. `kind` is `capacity` or `soak`. |
 | `narrative` | object | `what`, `why` and `how`, from perfkit.yaml. |
+| `target` | `server` or `cluster` | Optional: where the unit under test ran, the single server (`uut.compose`) or the Kubernetes cluster (`uut.helm`). Reports from earlier perfkit versions lack it; the page then shows no target. |
 | `unit` | string | `load.unit` from perfkit.yaml, a lowercase plural noun: what one SIPp call is (`calls`, `messages`). The page writes rates as `<n> <unit>/s`. |
 | `verdict` | string | `passed`, `failed`, `inconclusive`, `aborted` or `not-run`. |
 | `reason` | string or null | For `inconclusive`, `aborted` and `not-run`: a lowercase clause with no final period, like `the server under test stopped responding`; the page builds its sentences around it. `null` for `passed` and `failed`. |
@@ -97,7 +99,8 @@ What else a benchmark carries depends on its verdict:
 | `durationS` | number (s) | How long the benchmark ran. |
 | `warmupS` | number (s) | Soak: the warm-up, excluded from every verdict. |
 | `tool` | string | The load tool as shown on the page, like `SIPp 3.7.3, UDP`. |
-| `load.cps`, `load.holdS` | number | Soak: the fixed rate (calls/s) and call hold time (s). |
+| `load.cps`, `load.holdS` | number | Soak: the rate it ran at (calls/s) and call hold time (s). |
+| `load.rateSource` | object | Soak, optional: only with `rate.fromCapacity`. `fromCapacity` (the capacity benchmark), `limit` (its limit in calls/s, or null when it found none or did not run, so `fallbackCps` ran), `fraction`, and `lowerBound: true` when the limit is a lower bound (the ramp reached `max`, or the load generator gave out first). |
 | `rules` | list | One entry per threshold checked: `id` (the threshold's name), `limit`, `measured` and `passed`. A soak's `memoryGrowthMBPerHour` rule has one entry per process, with `process`. |
 | `resources.processes` | list | Per process in perfkit.yaml: `name` and `samples`, each `{ t, rssMB, cpuPct, fds, pid }`. |
 | `hops` | object | `sampleRatio`, `spans` (count) and `services`, each `{ service, p50Ms, p99Ms }`. |

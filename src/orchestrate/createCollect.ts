@@ -250,7 +250,7 @@ export function createCollect(deps: CollectDeps) {
         : ending === "unreachable"
           ? LOADGEN_UNRESPONSIVE
           : null;
-    const tool = `SIPp ${run.tools.sipp.replace(/-.*$/, "")}, UDP`;
+    const sipp = `SIPp ${run.tools.sipp.replace(/-.*$/, "")}`;
     const results = new Map<string, BenchmarkResult>();
     await run.plan.benchmarks.reduce(
       (previous, benchmark) =>
@@ -261,7 +261,7 @@ export function createCollect(deps: CollectDeps) {
             benchmark,
             join(runDir, "raw", benchmark.id),
             has ? null : { reason: reason ?? "the agent left no results" },
-            tool
+            `${sipp}, ${benchmark.load.transport.toUpperCase()}`
           );
           results.set(benchmark.id, result);
           deps.stdout(`${formatResultLine(result)}\n`);

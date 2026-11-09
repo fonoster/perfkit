@@ -1,12 +1,13 @@
 /**
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import {
   DOCKER_CLI_IMAGE,
+  KUBE_TOOLS_IMAGE,
   NODE_IMAGE,
   OTELCOL_IMAGE,
   SAMPLER_IMAGE,
@@ -20,6 +21,7 @@ import { agentKeyPath } from "./createAgentShell.js";
 import { lastLine } from "./errors.js";
 import { runPaths } from "./paths.js";
 import type { MachineInfo, RunState } from "./runState.schema.js";
+import { KUBE_SAMPLER_SCRIPT } from "./kubeSampler.js";
 import { SAMPLER_SCRIPT } from "./sampler.js";
 import { shellJoin, writeFileCommand } from "./shellQuote.js";
 import { stageAgentPackage } from "./stageAgentPackage.js";
@@ -39,7 +41,10 @@ export interface StartRunDeps {
  * and the SIPp (and collector) version, copies the project to both hosts
  * and the CLI's own package to the load generator, writes run.json and
  * starts the agent as a detached node container with the Docker socket
- * mounted. The agent's run-only key goes to the load generator only.
+ * mounted. The agent's run-only key goes to the load generator only. With a
+ * Kubernetes cluster it also pulls the Kubernetes tools, copies each helm
+ * benchmark's chart (which may live outside the project) and writes the
+ * cluster's kubeconfig to the load generator's keys directory, mode 600.
  *
  * @param deps - The remote hosts and the package to upload (injected)
  * @returns The run state the agent reads
@@ -76,7 +81,8 @@ export function createStartRun(deps: StartRunDeps) {
         NODE_IMAGE,
         DOCKER_CLI_IMAGE,
         SAMPLER_IMAGE,
-        ...(telemetry ? [OTELCOL_IMAGE] : [])
+        ...(telemetry ? [OTELCOL_IMAGE] : []),
+        ...(input.cluster ? [KUBE_TOOLS_IMAGE] : [])
       ];
       await exec(
         "loadgen",
@@ -149,6 +155,7 @@ export function createStartRun(deps: StartRunDeps) {
         ...(input.faviconSvg ? { faviconSvg: input.faviconSvg } : {}),
         hosts: input.hosts,
         ...(input.live ? { live: input.live } : {}),
+        ...(input.cluster ? { cluster: input.cluster } : {}),
         machines: { uut, loadgen },
         tools: { sipp, ...(otelcol ? { otelcol } : {}) }
       };
@@ -172,6 +179,9 @@ export function createStartRun(deps: StartRunDeps) {
       );
       await remote.upload("loadgen", agent, paths.agent);
       await remote.upload("loadgen", runJson, paths.runJson);
+      if (input.cluster) {
+        await stageCluster(input, staging);
+      }
       if (input.agentKey) {
         const keyFile = join(staging, "agent-key");
         await writeFile(
@@ -238,6 +248,47 @@ export function createStartRun(deps: StartRunDeps) {
       await rm(staging, { recursive: true, force: true });
     }
   };
+
+  /** The charts, the cluster sampler and the kubeconfig, on the load generator. */
+  async function stageCluster(input: StartRunInput, staging: string) {
+    const paths = runPaths(input.root);
+    const helm = input.plan.benchmarks.flatMap((benchmark) =>
+      "helm" in benchmark.uut
+        ? [{ id: benchmark.id, chart: benchmark.uut.helm.chart }]
+        : []
+    );
+    await exec(
+      "loadgen",
+      `mkdir -p ${paths.root}/charts ${paths.root}/helm && rm -rf ${helm.map(({ id }) => paths.chartOf(id)).join(" ") || "/nonexistent"}`,
+      "could not prepare the charts"
+    );
+    await helm.reduce(
+      (previous, { id, chart }) =>
+        previous.then(async () => {
+          const local = join(staging, "charts", id);
+          await cp(resolve(input.projectDir, chart), local, {
+            recursive: true
+          });
+          await remote.upload("loadgen", local, paths.chartOf(id));
+        }),
+      Promise.resolve()
+    );
+    await exec(
+      "loadgen",
+      writeFileCommand(paths.kubeSampler, KUBE_SAMPLER_SCRIPT),
+      "could not write the cluster sampler"
+    );
+    if (input.kubeconfig) {
+      const file = join(staging, "kubeconfig");
+      await writeFile(file, input.kubeconfig, { mode: 0o600 });
+      await remote.upload("loadgen", file, paths.kubeconfig);
+      await exec(
+        "loadgen",
+        `chmod 600 ${paths.kubeconfig}`,
+        "could not protect the kubeconfig"
+      );
+    }
+  }
 
   return withErrorHandlingAndValidation(fn, startRunInputSchema);
 }

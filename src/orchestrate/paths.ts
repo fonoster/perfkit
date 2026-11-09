@@ -14,6 +14,13 @@ export function runPaths(root: string) {
     project: `${root}/project`,
     agent: `${root}/agent`,
     sampler: `${root}/sampler.sh`,
+    kubeSampler: `${root}/kube-sampler.sh`,
+    /** The cluster's kubeconfig, a credential: mode 600, never in a log. */
+    kubeconfig: `${root}/keys/kubeconfig`,
+    /** A helm benchmark's chart, copied from outside the project. */
+    chartOf: (id: string) => `${root}/charts/${id}`,
+    /** A helm benchmark's rendered values file. */
+    valuesOf: (id: string) => `${root}/helm/${id}/values.yaml`,
     raw: `${root}/raw`,
     rawOf: (id: string) => `${root}/raw/${id}`
   };

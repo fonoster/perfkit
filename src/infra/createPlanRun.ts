@@ -5,6 +5,7 @@ import type { z } from "zod/v4";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import { formatRunId, type PerfkitConfig } from "../schemas/index.js";
 import {
+  clusterNameOf,
   DROPLET_IMAGE,
   PERFKIT_TAG,
   resourceNameOf,
@@ -15,7 +16,8 @@ import type { Plan, ResolvedImage } from "./types.js";
 
 /**
  * Creates `planRun`: it decides everything a run will create, without
- * creating anything and without calling DigitalOcean. It pins the images to
+ * creating anything and without calling DigitalOcean: the droplets, and a
+ * Kubernetes cluster when a selected benchmark has `uut.helm`. It pins the images to
  * their digests and looks up this machine's public IP for the SSH rule.
  *
  * @param deps - The digest resolver and the public IP lookup (injected)
@@ -37,6 +39,16 @@ export function createPlanRun(deps: {
     const selected = input.benchmarks
       ? config.benchmarks.filter(({ id }) => input.benchmarks?.includes(id))
       : config.benchmarks;
+    const usesCluster = selected.some(({ uut }) => "helm" in uut);
+    const cluster =
+      usesCluster && config.infra.cluster
+        ? {
+            name: clusterNameOf(runId),
+            size: config.infra.cluster.size,
+            nodes: config.infra.cluster.nodes,
+            version: config.infra.cluster.version
+          }
+        : undefined;
     const [images, ip] = await Promise.all([
       deps.resolveImageDigests({ images: config.images, tag: targetVersion }),
       deps.getPublicIp()
@@ -66,7 +78,8 @@ export function createPlanRun(deps: {
       sshSource: `${ip}/32`,
       images,
       benchmarks: selected,
-      maxLifetime: config.infra.maxLifetime
+      maxLifetime: config.infra.maxLifetime,
+      ...(cluster ? { cluster } : {})
     };
   };
 

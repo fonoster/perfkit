@@ -44,18 +44,20 @@ done
 
 /**
  * The sampler spec for one host: the UUT's processes from perfkit.yaml, or
- * the load generator's SIPp roles, matched by their Call-ID prefix flag.
+ * the load generator's SIPp roles, matched by their Call-ID prefix flag
+ * (with the lane's prefix, `k8s-` for a cluster benchmark).
  */
 export function buildSamplerSpec(
   host: Host,
-  processes: ReadonlyArray<{ name: string; match: string }>
+  processes: ReadonlyArray<{ name: string; match: string }>,
+  prefix = ""
 ): string {
   const entries =
     host === "uut"
       ? processes.map(({ name, match }) => [name, match])
       : (Object.keys(SIPP_PROCESS) as SippRole[]).map((role) => [
           SIPP_PROCESS[role],
-          `sipp .*-cid_str ${role}-`
+          `sipp .*-cid_str ${prefix}${role}-`
         ]);
   return entries.map(([name, match]) => `${name}\t${match}\n`).join("");
 }

@@ -28,6 +28,75 @@ describe("perfkitConfigSchema", () => {
       );
     });
 
+    it("should accept register and uas in a capacity benchmark", () => {
+      // Arrange
+      const raw = loadConfig();
+      raw.benchmarks[0].load.register = {
+        scenario: "one-soak/uac_register.xml",
+        users: "one-soak/callees.csv"
+      };
+      raw.benchmarks[0].load.uas = { scenario: "one-soak/uas_answer.xml" };
+
+      // Act
+      const config = perfkitConfigSchema.parse(raw);
+
+      // Assert
+      const capacity = config.benchmarks[0]!;
+      expect(capacity.load.register).to.deep.equal({
+        scenario: "one-soak/uac_register.xml",
+        users: "one-soak/callees.csv",
+        expires: 300
+      });
+      expect(capacity.load.uas).to.deep.equal({
+        scenario: "one-soak/uas_answer.xml"
+      });
+    });
+
+    it("should default the transport to udp and accept tcp", () => {
+      const raw = loadConfig();
+      delete raw.benchmarks[0].load.transport;
+      raw.benchmarks[1].load.transport = "tcp";
+      const config = perfkitConfigSchema.parse(raw);
+      expect(config.benchmarks[0]?.load.transport).to.equal("udp");
+      expect(config.benchmarks[1]?.load.transport).to.equal("tcp");
+    });
+
+    it("should accept a helm uut with a cluster, and a soak rate from a capacity benchmark", () => {
+      // Arrange
+      const raw = loadConfig();
+      raw.infra.cluster = { size: "c-8", nodes: 3 };
+      raw.benchmarks[0].uut = {
+        helm: {
+          chart: "../ops/charts/connect",
+          values: "k8s/values.yaml",
+          entry: { service: "perfkit-routr-edgeport-tcp", port: 5060 },
+          setup: "k8s/seed.sh",
+          pods: [{ name: "edgeport", selector: "service=edgeport" }]
+        }
+      };
+      raw.benchmarks[1].load.rate = {
+        fromCapacity: "edgeport-echo",
+        fraction: 0.5,
+        fallbackCps: 50
+      };
+
+      // Act
+      const config = perfkitConfigSchema.parse(raw);
+
+      // Assert
+      expect(config.infra.cluster).to.deep.equal({
+        size: "c-8",
+        nodes: 3,
+        version: "latest"
+      });
+      expect(config.benchmarks[0]?.uut).to.have.property("helm");
+      expect(config.benchmarks[1]?.load.rate).to.deep.equal({
+        fromCapacity: "edgeport-echo",
+        fraction: 0.5,
+        fallbackCps: 50
+      });
+    });
+
     it("should default hold to 0s and uac.users to none", () => {
       // Arrange
       const raw = loadConfig();
@@ -197,11 +266,61 @@ describe("perfkitConfigSchema", () => {
       ]);
     });
 
-    it("should reject register and uas in a capacity benchmark", () => {
+    it("should reject a capacity register without users", () => {
       const raw = loadConfig();
-      raw.benchmarks[0].load.uas = { scenario: "edgeport-echo/uac_invite.xml" };
+      raw.benchmarks[0].load.register = {
+        scenario: "one-soak/uac_register.xml",
+        foo: 1,
+        expires: 0
+      };
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
-        "benchmarks[0].load.uas: unknown key"
+        "benchmarks[0].load.register.expires: must be more than 0; got 0",
+        "benchmarks[0].load.register.foo: unknown key",
+        "benchmarks[0].load.register.users: required"
+      ]);
+    });
+
+    it("should name the missing field of a helm uut, not every shape", () => {
+      const raw = loadConfig();
+      raw.infra.cluster = { size: "c-8", nodes: 3 };
+      raw.benchmarks[0].uut = {
+        helm: {
+          chart: "../ops/charts/connect",
+          values: "k8s/values.yaml",
+          entry: { service: "Bad_Name", port: 5060 }
+        }
+      };
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        'benchmarks[0].uut.helm.entry.service: expected a Kubernetes name: lowercase letters, digits and dashes; got "Bad_Name"',
+        "benchmarks[0].uut.helm.pods: required"
+      ]);
+    });
+
+    it("should require infra.cluster when a benchmark has uut.helm", () => {
+      const raw = loadConfig();
+      raw.benchmarks[0].uut = {
+        helm: {
+          chart: "../ops/charts/connect",
+          values: "k8s/values.yaml",
+          entry: { service: "sipp-tcp", port: 5060 },
+          pods: [{ name: "edgeport", selector: "service=edgeport" }]
+        }
+      };
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "infra.cluster: required: edgeport-echo has uut.helm"
+      ]);
+    });
+
+    it("should reject a fromCapacity that names no capacity benchmark, and a bad fraction", () => {
+      const raw = loadConfig();
+      raw.benchmarks[1].load.rate = {
+        fromCapacity: "one-soak",
+        fraction: 1.5,
+        fallbackCps: 50
+      };
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        "benchmarks[1].load.rate.fraction: expected a fraction more than 0 and at most 1; got 1.5",
+        'benchmarks[1].load.rate.fromCapacity: expected the id of a capacity benchmark (edgeport-echo); got "one-soak"'
       ]);
     });
 
@@ -220,11 +339,11 @@ describe("perfkitConfigSchema", () => {
       const raw = loadConfig();
       raw.benchmarks[0].kind = "spike";
       raw.benchmarks[1].load.tool = "k6";
-      raw.benchmarks[1].load.transport = "tcp";
+      raw.benchmarks[1].load.transport = "sctp";
       expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
         'benchmarks[0].kind: expected one of capacity, soak; got "spike"',
         'benchmarks[1].load.tool: expected sipp; got "k6"',
-        'benchmarks[1].load.transport: expected udp; got "tcp"'
+        'benchmarks[1].load.transport: expected one of udp, tcp; got "sctp"'
       ]);
     });
 

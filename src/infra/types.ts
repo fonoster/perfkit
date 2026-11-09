@@ -90,6 +90,38 @@ export interface DoFirewall extends DoFirewallInput {
   created_at: string;
 }
 
+/** A DOKS cluster (`/v2/kubernetes/clusters`), only the fields perfkit reads. */
+export interface DoKubernetesCluster {
+  id: string;
+  name: string;
+  region: string;
+  /** The version slug, like 1.33.1-do.0. */
+  version: string;
+  created_at: string;
+  tags: string[];
+  status: { state: string; message?: string };
+  node_pools: Array<{
+    name: string;
+    size: string;
+    count: number;
+    nodes?: Array<{ droplet_id?: string; status?: { state?: string } }>;
+  }>;
+}
+
+export interface DoKubernetesClusterCreate {
+  name: string;
+  region: string;
+  version: string;
+  vpc_uuid: string;
+  tags: string[];
+  node_pools: Array<{
+    name: string;
+    size: string;
+    count: number;
+    tags: string[];
+  }>;
+}
+
 /**
  * The DigitalOcean API v2, only the calls perfkit makes. The real client is
  * `createDoClient`; unit tests inject a fake. Every delete resolves when the
@@ -124,6 +156,19 @@ export interface DoClient {
   deleteFirewall(id: string): Promise<void>;
 
   deleteTag(name: string): Promise<void>;
+
+  listKubernetesClusters(): Promise<DoKubernetesCluster[]>;
+  createKubernetesCluster(
+    input: DoKubernetesClusterCreate
+  ): Promise<DoKubernetesCluster>;
+  getKubernetesCluster(id: string): Promise<DoKubernetesCluster>;
+  /** The cluster's kubeconfig (YAML), its token valid for `expirySeconds`. */
+  getKubeconfig(id: string, expirySeconds: number): Promise<string>;
+  /**
+   * Deletes the cluster with every load balancer, volume and volume
+   * snapshot it created (`destroy_with_associated_resources/dangerous`).
+   */
+  deleteKubernetesCluster(id: string): Promise<void>;
 }
 
 /** A container registry, only to turn a tag into a digest. */
@@ -206,6 +251,20 @@ export interface RunResources {
   vpc?: { id: string; name: string };
   droplets: CreatedDroplet[];
   firewall?: { id: string; name: string };
+  /** The DOKS cluster, deleted with its load balancers and volumes. */
+  cluster?: { id: string; name: string };
+}
+
+/** A run's DOKS cluster once it is running. */
+export interface ProvisionedCluster {
+  id: string;
+  name: string;
+  /** The version slug it runs, like 1.33.1-do.0. */
+  version: string;
+  size: string;
+  nodes: number;
+  /** The kubeconfig, a credential: it goes to the load generator only. */
+  kubeconfig: string;
 }
 
 /** A run whose droplets are active and done with cloud-init. */
@@ -217,6 +276,8 @@ export interface ProvisionedRun extends RunResources {
   loadgen: CreatedDroplet & { publicIp: string; privateIp: string };
   /** The private key that logs in as root on both droplets. */
   identity: SshIdentity;
+  /** With a cluster in the plan. */
+  provisionedCluster?: ProvisionedCluster;
 }
 
 /** What `withRun` hands its body. */
@@ -233,7 +294,8 @@ export interface RunContext {
   handOff(): void;
 }
 
-export type ResourceKind = "droplet" | "firewall" | "VPC" | "SSH key" | "tag";
+export type ResourceKind =
+  "droplet" | "firewall" | "VPC" | "SSH key" | "tag" | "cluster";
 
 export interface DeletedResource {
   kind: ResourceKind;

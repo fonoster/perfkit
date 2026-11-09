@@ -18,8 +18,16 @@ export {
   type ImageEntry,
   type PerfkitConfig,
   type PerfkitConfigInput,
-  type SoakBenchmarkConfig
+  type SoakBenchmarkConfig,
+  type ClusterConfig,
+  type ComposeUutConfig,
+  type HelmUutConfig,
+  type SoakRateConfig,
+  type UutConfig
 } from "./perfkitConfig.schema.js";
+export { isHelmUut } from "./isHelmUut.js";
+export { targetOf, type BenchmarkTarget } from "./targetOf.js";
+export { uutProcessNames } from "./uutProcessNames.js";
 export {
   BENCHMARK_KINDS,
   CAPACITY_RULE_IDS,

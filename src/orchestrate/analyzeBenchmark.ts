@@ -7,7 +7,11 @@ import {
   createAnalyzeCapacity,
   createAnalyzeSoak
 } from "../analyze/index.js";
-import type { BenchmarkConfig, BenchmarkResult } from "../schemas/index.js";
+import {
+  type BenchmarkConfig,
+  type BenchmarkResult,
+  targetOf
+} from "../schemas/index.js";
 
 /** What collect knows about a benchmark that has no full results. */
 export type Unfinished = { reason: string };
@@ -17,9 +21,26 @@ export type Unfinished = { reason: string };
  * decides; when the agent left an `aborted` reason (the UUT stopped
  * responding) the entry is `aborted` with that reason and whatever series
  * the analyzer could still read. Without raw results it is `aborted` with
- * the given reason.
+ * the given reason. Every entry names its target, `server` or `cluster`.
  */
 export async function analyzeBenchmark(
+  deps: AnalyzeDeps,
+  benchmark: BenchmarkConfig,
+  rawDir: string,
+  unfinished: Unfinished | null,
+  tool: string
+): Promise<BenchmarkResult> {
+  const result = await analyzeWithoutTarget(
+    deps,
+    benchmark,
+    rawDir,
+    unfinished,
+    tool
+  );
+  return { ...result, target: targetOf(benchmark) } as BenchmarkResult;
+}
+
+async function analyzeWithoutTarget(
   deps: AnalyzeDeps,
   benchmark: BenchmarkConfig,
   rawDir: string,

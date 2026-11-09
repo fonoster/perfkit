@@ -16,6 +16,7 @@ import {
   formatRate
 } from "../format.js";
 import { esc } from "../html.js";
+import { targetLabel } from "../targetLabel.js";
 import type { MeasuredSoak, PageContext, PartialSoak } from "../types.js";
 import {
   verdictIcon,
@@ -51,7 +52,7 @@ export function renderSoakSection(
 
   return `<section class="bench bench-sunken" id="${esc(benchmark.id)}" aria-labelledby="${esc(benchmark.id)}-title">
 <div class="wrap">
-${sectionHead(benchmark, index, meta, sub)}
+${sectionHead(benchmark, index, meta, sub, targetLabel(benchmark, ctx.report.run.infra))}
 ${body}
 </div>
 </section>`;

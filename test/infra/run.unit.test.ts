@@ -58,6 +58,39 @@ describe("perfkit run", () => {
       expect(infra.account.calls).to.deep.equal([]);
     });
 
+    it("should plan the cluster only when a selected benchmark has uut.helm, and create nothing", async () => {
+      // Arrange
+      const { routrWithCluster } =
+        await import("../orchestrate/clusterConfig.js");
+      const config = await routrWithCluster();
+      const infra = infraDeps();
+      const args = ["run", "--config", config, "--target-version", "2.31.5"];
+
+      // Act
+      const withCluster = await perfkit(
+        [...args, "--benchmarks", "k8s-capacity", "--dry-run"],
+        infra
+      );
+      const without = await perfkit(
+        [...args, "--benchmarks", "one-soak", "--dry-run"],
+        infra
+      );
+      const local = await perfkit(
+        [...args, "--benchmarks", "k8s-capacity", "--dry-run", "--local"],
+        infra
+      );
+
+      // Assert
+      expect(withCluster.out).to.include(
+        "  cluster    perfkit-20261103t141210z-bd3254a: DOKS latest, 3 × c-8, in the VPC; deleted with its load balancers and volumes\n"
+      );
+      expect(without.out).not.to.include("cluster");
+      expect(local.out).to.include(
+        "  cluster    kind perfkit-20261103t141210z-bd3254a, 3 nodes, MetalLB; deleted at the end\n"
+      );
+      expect(infra.account.calls).to.deep.equal([]);
+    });
+
     it("should pin an image with a tagSuffix at the target version followed by the suffix", async () => {
       // Arrange
       const dir = await mkdtemp(join(tmpdir(), "perfkit-suffix-"));

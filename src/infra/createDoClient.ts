@@ -9,6 +9,7 @@ import type {
   DoClient,
   DoDroplet,
   DoFirewall,
+  DoKubernetesCluster,
   DoSshKey,
   DoVpc,
   DoVpcMember
@@ -39,11 +40,7 @@ export function createDoClient(input: DoClientInput): DoClient {
   if (!parsed.success) throw new ValidationError(parsed.error);
   const { token, fetch: doFetch } = parsed.data;
 
-  const request = async <T>(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<T | null> => {
+  const send = async (method: string, path: string, body?: unknown) => {
     const response = await doFetch(`${DO_API_URL}${path}`, {
       method,
       headers: {
@@ -53,6 +50,15 @@ export function createDoClient(input: DoClientInput): DoClient {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
+    return response;
+  };
+
+  const request = async <T>(
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<T | null> => {
+    const response = await send(method, path, body);
     if (response.status === 404 && method !== "POST") return null;
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -150,7 +156,46 @@ export function createDoClient(input: DoClientInput): DoClient {
       ).firewall,
     deleteFirewall: (id) => remove(`/firewalls/${encodeURIComponent(id)}`),
 
-    deleteTag: (name) => remove(`/tags/${encodeURIComponent(name)}`)
+    deleteTag: (name) => remove(`/tags/${encodeURIComponent(name)}`),
+
+    listKubernetesClusters: () =>
+      listAll<DoKubernetesCluster>(
+        "/kubernetes/clusters",
+        "kubernetes_clusters"
+      ),
+    createKubernetesCluster: async (body) =>
+      (
+        await required<{ kubernetes_cluster: DoKubernetesCluster }>(
+          "POST",
+          "/kubernetes/clusters",
+          body
+        )
+      ).kubernetes_cluster,
+    getKubernetesCluster: async (id) =>
+      (
+        await required<{ kubernetes_cluster: DoKubernetesCluster }>(
+          "GET",
+          `/kubernetes/clusters/${encodeURIComponent(id)}`
+        )
+      ).kubernetes_cluster,
+    getKubeconfig: async (id, expirySeconds) => {
+      const path = `/kubernetes/clusters/${encodeURIComponent(id)}/kubeconfig?expiry_seconds=${Math.round(expirySeconds)}`;
+      const response = await send("GET", path);
+      const text = await response.text().catch(() => "");
+      if (!response.ok) {
+        throw new DigitalOceanError(
+          messageFrom(text, response.status),
+          response.status,
+          "GET",
+          path
+        );
+      }
+      return text;
+    },
+    deleteKubernetesCluster: (id) =>
+      remove(
+        `/kubernetes/clusters/${encodeURIComponent(id)}/destroy_with_associated_resources/dangerous`
+      )
   };
 }
 

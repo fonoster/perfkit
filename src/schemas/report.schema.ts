@@ -61,13 +61,24 @@ const machineSchema = z.strictObject({
   memoryMB: positiveNumber.int({ error: "expected a whole number" })
 });
 
+/** The Kubernetes cluster of the benchmarks whose target is `cluster`. */
+export const runClusterSchema = z.strictObject({
+  provider: z.enum(["digitalocean", "kind"]),
+  nodes: positiveNumber.int({ error: "expected a whole number" }),
+  /** The node droplet size, or `local` for kind. */
+  size: nonEmptyString,
+  /** The Kubernetes version, like 1.33.1-do.0 or v1.33.1. */
+  version: nonEmptyString
+});
+
 const runInfraSchema = z.strictObject({
   provider: z.enum(["digitalocean", "local"]),
   region: nonEmptyString,
   uut: machineSchema,
   loadgen: machineSchema,
   os: nonEmptyString,
-  docker: nonEmptyString
+  docker: nonEmptyString,
+  cluster: runClusterSchema.optional()
 });
 
 const pinnedImageSchema = z
@@ -119,7 +130,9 @@ const baseFields = {
   title: nonEmptyString,
   narrative: narrativeSchema,
   // load.unit from perfkit.yaml: what one SIPp "call" is ("calls", "messages").
-  unit: z.string().regex(/^[a-z]+$/, { error: "expected a lowercase plural noun" })
+  unit: z.string().regex(/^[a-z]+$/, { error: "expected a lowercase plural noun" }),
+  /** Where the unit under test ran; absent in older reports. */
+  target: z.enum(["server", "cluster"]).optional()
 };
 
 const ruleFields = {
@@ -305,7 +318,22 @@ const soakMeasuredSchema = z
     tool: nonEmptyString,
     load: z.strictObject({
       cps: positiveNumber,
-      holdS: nonNegativeNumber
+      holdS: nonNegativeNumber,
+      /**
+       * With `rate.fromCapacity`: the capacity benchmark, its limit (null
+       * when it found none and `fallbackCps` ran), the fraction, and
+       * whether the limit is a lower bound.
+       */
+      rateSource: z
+        .strictObject({
+          fromCapacity: benchmarkIdSchema,
+          limit: nonNegativeNumber.nullable(),
+          fraction: positiveNumber,
+          /** The limit is a lower bound: the load generator gave out first. */
+          lowerBound: z.boolean().optional()
+        })
+        .nullable()
+        .optional()
     }),
     rules: z.array(soakRuleSchema),
     headline: soakHeadlineSchema,
@@ -398,6 +426,7 @@ export type StoppedBy = z.infer<typeof stoppedBySchema>;
 export type Step = z.infer<typeof stepSchema>;
 export type Series = z.infer<typeof seriesSchema>;
 export type Resources = z.infer<typeof resourcesSchema>;
+export type RunCluster = z.infer<typeof runClusterSchema>;
 export type Hops = z.infer<typeof hopsSchema>;
 
 /** `passed` needs every rule passed; `failed` needs at least one failed. */
