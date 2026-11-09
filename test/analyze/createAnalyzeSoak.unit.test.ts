@@ -184,6 +184,67 @@ describe("createAnalyzeSoak", () => {
       expect(result.rules.at(-1)).to.include({ measured: 1, passed: false });
     });
 
+    describe("on the cluster", () => {
+      const helmConfig = () => {
+        const base = soakConfig();
+        return {
+          ...base,
+          uut: {
+            helm: {
+              chart: "../ops/charts/connect",
+              values: "k8s/values.yaml",
+              entry: { service: "routr-edgeport-tcp", port: 5060 },
+              pods: ["one", "edgeport", "postgres"].map((name) => ({
+                name,
+                selector: `service=${name}`
+              }))
+            }
+          }
+        } as unknown as typeof base;
+      };
+
+      it("should not count gaps in the samples as restarts", async () => {
+        // Arrange: 29 gaps, as the metrics API left in a real run, and no pod restarted
+        const gap = (name: string, hours: number) =>
+          Array.from({ length: 29 }, (_, i) => 0.05 + i * 0.06).some(
+            (from) => hours >= from && hours < from + 0.02
+          ) && name !== "one";
+
+        // Act
+        const result = measured(
+          await analyze(
+            { processAt: (name, hours) => (gap(name, hours) ? null : {}) },
+            helmConfig()
+          )
+        );
+
+        // Assert
+        expect(result.rules.at(-1)).to.deep.equal({
+          id: "restarts",
+          limit: 0,
+          measured: 0,
+          passed: true
+        });
+      });
+
+      it("should count a rise of the pid, the pod counters' restarts", async () => {
+        // Act
+        const result = measured(
+          await analyze(
+            {
+              processAt: (name, hours) => ({
+                pid: name === "edgeport" ? (hours > 1 ? 3 : 1) : 1
+              })
+            },
+            helmConfig()
+          )
+        );
+
+        // Assert
+        expect(result.rules.at(-1)).to.include({ measured: 2, passed: false });
+      });
+    });
+
     it("should fail when failed calls reach 0.1% after the warm-up", async () => {
       // Act
       const result = measured(await analyze({ failedPerRow: 60 }));

@@ -4,6 +4,7 @@
 import { basename } from "node:path";
 import { withErrorHandlingAndValidation } from "../errors/index.js";
 import {
+  isHelmUut,
   type SoakBenchmarkResult,
   type SoakRule,
   uutProcessNames
@@ -147,7 +148,9 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
     const failedPct = roundTo(
       callSums.attempted > 0 ? (callSums.failed / callSums.attempted) * 100 : 0
     );
-    const restarts = countRestarts(after, uutProcesses);
+    const restarts = countRestarts(after, uutProcesses, {
+      fromCounters: isHelmUut(benchmark.uut)
+    });
     const { thresholds } = benchmark;
 
     const growth = uutProcesses.map((name) => ({

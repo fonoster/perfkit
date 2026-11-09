@@ -444,7 +444,7 @@ A soak holds a fixed rate for hours to find leaks. With `rate.fromCapacity`, the
 (when it was inconclusive because the load generator gave out, the highest step before that, if
 every one passed, as a lower bound), or `fallbackCps` when it found none; the progress log and
 `load.rateSource` in report.json say which.
-On the cluster, a restart is a container restart of a sampled pod (its restart count went up).
+On the cluster, a restart is a container restart of a sampled pod (its restart count went up) or a pod replaced by another; a sample the Metrics API left out is not a restart.
 
 - **Warm-up excluded.** Nothing measured during `warmup` counts toward any rule.
 - **Too little data.** When the samples after the warm-up cover less than 90% of `duration`, the
