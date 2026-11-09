@@ -9,10 +9,29 @@ export const REMOTE_ROOT = "/opt/perfkit";
  * 5070: the register scenario, with the uas scenario answering out-of-call
  * INVITEs (`-oocsf`) on the same socket, because Routr routes a call to
  * the address of the REGISTER's top Via. A soak with a uas and no register
- * runs the uas alone on 5070.
+ * runs the uas alone on 5070. With `load.instances` above 1 there are as many
+ * callee processes, each on its own port (see `sippPortOf`).
  */
 export const SIPP_PORTS = { uac: 5080, register: 5070, uas: 5070 } as const;
 export type SippRole = keyof typeof SIPP_PORTS;
+
+/**
+ * The first port of the callee instances after the first, which keeps 5070:
+ * 5080 and up are the uac instances', so the callees' go well above them.
+ */
+export const SIPP_EXTRA_CALLEE_PORT = 5200;
+
+/**
+ * A SIPp role instance's local port, before the lane's offset: the uac's
+ * instances count up from 5080, the first callee is on 5070 and the other
+ * callees on 5200 and up.
+ */
+export function sippPortOf(role: SippRole, instance = 1): number {
+  if (role === "uac") return SIPP_PORTS.uac + instance - 1;
+  return instance > 1
+    ? SIPP_EXTRA_CALLEE_PORT + instance - 2
+    : SIPP_PORTS[role];
+}
 
 /** The sampler's process name for each SIPp role (#2's sipp-uac and peers). */
 export const SIPP_PROCESS = {

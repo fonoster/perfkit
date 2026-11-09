@@ -92,6 +92,35 @@ async function routrWithCapacityCallees(): Promise<string> {
   return join(dir, "perfkit.yaml");
 }
 
+/** A register role's counts file with `registered` 200 OKs. */
+function registerCounts(registered: number): string {
+  return [
+    "CurrentTime;ElapsedTime;0_REGISTER_Sent;2_401_Recv;3_REGISTER_Sent;5_200_Recv;",
+    `2026-11-03T14:12:10Z;00:00:10:000000;200;200;200;${registered};`,
+    ""
+  ].join("\n");
+}
+
+/**
+ * Answers `docker inspect` of the callee containers with a pid of their own
+ * (1001 for the first, 1002 for -register2, ...), as SIPp names its files
+ * after it when several callees run in the host's pid namespace.
+ */
+function calleePids(setup: Awaited<ReturnType<typeof doSetup>>) {
+  const writer = setup.hosts.onDocker;
+  setup.hosts.onDocker = async (host, command, by) => {
+    const match = /docker inspect .*-sipp-register(\d*)'?\s*$/.exec(command);
+    if (match) {
+      return {
+        code: 0,
+        stdout: `${1000 + Number(match[1] || 1)}\n`,
+        stderr: ""
+      };
+    }
+    return writer(host, command, by);
+  };
+}
+
 /** A passing capacity ramp, and the register role's counts file. */
 function capacityWithRegistrations(registered: number) {
   return {
@@ -398,9 +427,16 @@ describe("createAgent", () => {
         "--benchmarks",
         "one-soak"
       ],
-      soakRaw({ warmupS: 1800, afterS: 21600 }),
+      {
+        ...soakRaw({ warmupS: 1800, afterS: 21600 }),
+        // 200 callees dealt to 3 callees: 67, 67 and 66
+        "uac_register_1001_counts.csv": registerCounts(67),
+        "uac_register_1002_counts.csv": registerCounts(67),
+        "uac_register_1003_counts.csv": registerCounts(66)
+      },
       true
     );
+    calleePids(setup);
     await withCallees(setup);
     const callers = Array.from({ length: 9 }, (_, i) => `caller${i};pw${i}`);
     await writeFile(
@@ -420,7 +456,27 @@ describe("createAgent", () => {
     expect(started("-sipp-uac2 ")).to.have.length(1);
     expect(started("-sipp-uac3 ")).to.have.length(1);
     expect(started("-sipp-uac2 ")[0]).to.include("--pid host");
+    // one callee per instance, each with its own port and share of the callees
+    expect(started("-sipp-register ")).to.have.length(1);
+    expect(started("-sipp-register2 ")).to.have.length(1);
+    expect(started("-sipp-register3 ")).to.have.length(1);
+    expect(started("-sipp-register2 ")[0]).to.include("--pid host");
+    expect(started("-sipp-register2 ")[0]).to.include("-p 5200 ");
+    expect(started("-sipp-register2 ")[0]).to.include(
+      "-inf /raw/users-register-2.csv"
+    );
+    expect(started("-sipp-register ")[0]).to.include("-m 67 ");
+    expect(started("-sipp-register3 ")[0]).to.include("-m 66 ");
     const raw = join(setup.hosts.roots.loadgen, "raw", "one-soak");
+    expect(
+      (await readFile(join(raw, "users-register-3.csv"), "utf8"))
+        .trim()
+        .split("\n")
+        .slice(1, 3)
+    ).to.deep.equal([
+      "callee2;pass2;[authentication username=callee2 password=pass2]",
+      "callee5;pass5;[authentication username=callee5 password=pass5]"
+    ]);
     const share = async (n: number) =>
       (await readFile(join(raw, `users-uac-${n}.csv`), "utf8"))
         .trim()
@@ -443,6 +499,62 @@ describe("createAgent", () => {
         (c) => c.includes("docker kill -s USR1") && c.includes("-sipp-uac3")
       )
     ).to.equal(true);
+  });
+
+  it("should abort without starting the uacs when one callee registers only part of its share", async () => {
+    // Arrange: 3 callees, the second one registers 10 of its 67
+    const dir = await mkdtemp(join(tmpdir(), "perfkit-callees-"));
+    await cp(dirname(ROUTR_CONFIG), dir, { recursive: true });
+    const yaml = await readFile(ROUTR_CONFIG, "utf8");
+    await writeFile(
+      join(dir, "perfkit.yaml"),
+      yaml.replace(
+        "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }",
+        "uac: { scenario: one-soak/uac_invite.xml, users: one-soak/callers.csv }\n      instances: 3"
+      )
+    );
+    const setup = await detached(
+      [
+        "run",
+        "--config",
+        join(dir, "perfkit.yaml"),
+        "--target-version",
+        "2.31.5",
+        "--benchmarks",
+        "one-soak"
+      ],
+      {
+        ...soakRaw({ warmupS: 1800, afterS: 21600 }),
+        "uac_register_1001_counts.csv": registerCounts(67),
+        "uac_register_1002_counts.csv": registerCounts(10),
+        "uac_register_1003_counts.csv": registerCounts(66)
+      },
+      true
+    );
+    calleePids(setup);
+    await withCallees(setup);
+    await writeFile(
+      join(setup.hosts.roots.loadgen, "project", "one-soak", "callers.csv"),
+      [
+        "SEQUENTIAL",
+        ...Array.from({ length: 9 }, (_, i) => `caller${i};pw${i}`),
+        ""
+      ].join("\n")
+    );
+
+    // Act
+    const outcome = await setup.agent.run(setup.runId());
+
+    // Assert
+    expect(outcome).to.deep.equal({ status: "done" });
+    const commands = agentCommands(setup).map(({ command }) => command);
+    expect(
+      commands.some((c) => c.includes("-sipp-uac ") && c.includes("run -d"))
+    ).to.equal(false);
+    const raw = join(setup.hosts.roots.loadgen, "raw", "one-soak");
+    expect((await readFile(join(raw, "aborted"), "utf8")).trim()).to.equal(
+      "callee 2 registered 10 of 67 within 64 s, so no call was placed"
+    );
   });
 
   it("should abort a soak without starting its uac when the callees don't all register in time", async () => {

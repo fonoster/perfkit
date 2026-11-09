@@ -2,7 +2,11 @@
  * Copyright (C) 2026 by Fonoster Inc (https://fonoster.com). MIT License.
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
-import { type BenchmarkConfig, targetOf } from "../schemas/index.js";
+import {
+  type BenchmarkConfig,
+  calleeInstancesOf,
+  targetOf
+} from "../schemas/index.js";
 import { splitRate } from "./splitRate.js";
 import {
   CAPACITY_RECV_TIMEOUT_MS,
@@ -10,14 +14,19 @@ import {
   REGISTER_RATE,
   SIPP_LANES,
   SIPP_MAX_SOCKET_CAP,
-  SIPP_PORTS,
   SIPP_SOCKET_MARGIN,
+  sippPortOf,
   type SippRole
 } from "./constants.js";
 
 /** Where an instance's share of the uac users file is, in a SIPp container. */
 export function uacUsersFileOf(instance: number): string {
   return `users-uac-${instance}.csv`;
+}
+
+/** Where a callee instance's share of the register users file is, in /raw. */
+export function registerUsersFileOf(instance: number): string {
+  return `users-register-${instance}.csv`;
 }
 
 /** Where the project is mounted in a SIPp container. */
@@ -47,7 +56,7 @@ export const SIPP_COMMON_FLAGS = [
 
 export interface SippRoleSpec {
   role: SippRole;
-  /** Which of the role's SIPp processes: 1, or 1 to `load.instances` for the uac. */
+  /** Which of the role's SIPp processes: 1, or 1 to `load.instances` for the uac and the callees. */
   instance: number;
   /** The scenario, relative to the project directory. */
   scenario: string;
@@ -62,7 +71,7 @@ export interface SippRolesInput {
   uutIp: string;
   /** The load generator's address: SIPp binds to it (`-i`), so it is [local_ip]. */
   loadgenIp: string;
-  /** Rows of the register users file, after its first line. */
+  /** Rows of the register users file, after its first line; the callees split them. */
   registerUsers: number;
   /** A cluster benchmark's entry; otherwise `<uutIp>:<load.port>`. */
   target?: { ip: string; port: number };
@@ -72,13 +81,17 @@ export interface SippRolesInput {
   bindIps?: Partial<Record<SippRole, string>>;
   /** A uac instance's own address, when it runs on another load generator. */
   uacIps?: Record<number, string>;
+  /** A callee instance's own address, when it runs on another load generator. */
+  calleeIps?: Record<number, string>;
 }
 
 /**
  * The SIPp roles of a benchmark, in the order they start, with the
  * Contract's flags. Either kind can have callees: the register scenario,
- * answering INVITEs with the uas scenario through `-oocsf`, on port 5070,
- * or the uas alone on 5070; they start before the uac. Each role has its
+ * answering INVITEs with the uas scenario through `-oocsf`, or the uas alone
+ * on 5070; they start before the uac. With a register there are as many
+ * callee instances as `load.instances`, each registering its share of the
+ * users (`-inf /raw/users-register-<n>.csv`) from its own port. Each role has its
  * own Call-ID prefix (`-cid_str <role>-<run id>-%u-%p@%s`) and binds to the load
  * generator's address (`-i`), which scenarios use as [local_ip]. The uac and
  * register roles send to the target; no role gets `-s`. The hold is `-d`.
@@ -95,7 +108,8 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
   const { benchmark } = input;
   const { load } = benchmark;
   const lane = SIPP_LANES[targetOf(benchmark)];
-  const portOf = (role: SippRole) => SIPP_PORTS[role] + lane.portOffset;
+  const portOf = (role: SippRole, instance = 1) =>
+    sippPortOf(role, instance) + lane.portOffset;
   const target = input.target
     ? `${input.target.ip}:${input.target.port}`
     : `${input.uutIp}:${load.port}`;
@@ -107,11 +121,11 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
     "-sf",
     `${SIPP_PROJECT_DIR}/${scenario}`,
     "-i",
-    (role === "uac" ? input.uacIps?.[instance] : undefined) ??
+    (role === "uac" ? input.uacIps?.[instance] : input.calleeIps?.[instance]) ??
       input.bindIps?.[role] ??
       input.loadgenIp,
     "-p",
-    String(portOf(role) + instance - 1),
+    String(portOf(role, instance)),
     "-cid_str",
     callIdOf(role, lane.prefix, input.runId, instance),
     ...(tcp ? ["-t", "tn", ...SIPP_COMMON_FLAGS.slice(2)] : SIPP_COMMON_FLAGS)
@@ -152,36 +166,44 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
       : [])
   ];
 
+  const calleeCount = calleeInstancesOf(load);
+  const calleeList = Array.from({ length: calleeCount }, (_, i) => i + 1);
+  /** A callee instance's share of the register users, or all of them. */
+  const registerUsersOf = (instance: number) =>
+    shareSizeOf(input.registerUsers, calleeCount, instance);
+  const registerInput = (register: { users: string }, instance: number) =>
+    calleeCount > 1
+      ? ["-inf", `/raw/${registerUsersFileOf(instance)}`]
+      : users(register.users);
+
   const callees = (rampCalls: number | null): SippRoleSpec[] => {
     const { register, uas } = load;
     if (register) {
-      return [
-        {
-          role: "register",
-          instance: 1,
-          scenario: register.scenario,
-          args: [
-            target,
-            ...scenarioFlags("register", register.scenario),
-            ...(uas ? ["-oocsf", `${SIPP_PROJECT_DIR}/${uas.scenario}`] : []),
-            ...users(register.users),
-            "-m",
-            n(input.registerUsers),
-            "-r",
-            String(REGISTER_RATE),
-            ...open(input.registerUsers + (rampCalls ?? 0)),
-            "-key",
-            "expires",
-            n(register.expires),
-            "-key",
-            "refresh_ms",
-            n((register.expires / 2) * 1000),
-            "-key",
-            "uas_port",
-            String(portOf("register"))
-          ]
-        }
-      ];
+      return calleeList.map((instance): SippRoleSpec => ({
+        role: "register",
+        instance,
+        scenario: register.scenario,
+        args: [
+          target,
+          ...scenarioFlags("register", register.scenario, instance),
+          ...(uas ? ["-oocsf", `${SIPP_PROJECT_DIR}/${uas.scenario}`] : []),
+          ...registerInput(register, instance),
+          "-m",
+          n(registerUsersOf(instance)),
+          "-r",
+          String(REGISTER_RATE),
+          ...open(registerUsersOf(instance) + shareCalls(rampCalls ?? 0)),
+          "-key",
+          "expires",
+          n(register.expires),
+          "-key",
+          "refresh_ms",
+          n((register.expires / 2) * 1000),
+          "-key",
+          "uas_port",
+          String(portOf("register", instance))
+        ]
+      }));
     }
     if (uas) {
       return [
@@ -265,6 +287,18 @@ export function buildSippRoles(input: SippRolesInput): SippRoleSpec[] {
       ]
     }))
   ];
+}
+
+/**
+ * How many of `rows` users the `instance`-th (from 1) of `instances` shares
+ * gets when they are dealt out round-robin, like `splitUsers` does.
+ */
+export function shareSizeOf(
+  rows: number,
+  instances: number,
+  instance: number
+): number {
+  return Math.max(0, Math.floor((rows - instance + instances) / instances));
 }
 
 /** Rows of a SIPp injection file: its lines after the first, not blank. */

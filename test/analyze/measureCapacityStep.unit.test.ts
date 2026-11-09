@@ -3,6 +3,8 @@
  */
 import { expect } from "chai";
 import {
+  calleeProcessName,
+  calleeProcessNames,
   measureCapacityStep,
   parseSamplerJsonl,
   parseUdpJsonl,
@@ -29,7 +31,8 @@ function calleeAt(name: string, pct: number): string[] {
 async function step(
   spec: Parameters<typeof capacityRaw>[0][number],
   extraSampler: string[] = [],
-  uacProcesses?: string[]
+  uacProcesses?: string[],
+  calleeProcesses?: string[]
 ) {
   const files = capacityRaw([spec]);
   files["sampler.jsonl"] = [
@@ -53,6 +56,7 @@ async function step(
     udp: parseUdpJsonl(files["udp.jsonl"] as string, "udp.jsonl"),
     uutProcesses: ["edgeport"],
     ...(uacProcesses ? { uacProcesses } : {}),
+    ...(calleeProcesses ? { calleeProcesses } : {}),
     unit: "calls"
   });
 }
@@ -108,6 +112,35 @@ describe("measureCapacityStep", () => {
     expect(busy.step.sippCpuPct).to.equal(86);
     expect(fine.invalidReason).to.equal(null);
     expect(fine.step.sippCpuPct).to.equal(70);
+  });
+
+  it("should judge each callee instance on its own core, and name the busy one", async () => {
+    // Arrange: three callees, the third at 86% of its core
+    const callees = calleeProcessNames(3);
+
+    // Act
+    const measured = await step(
+      { offeredCps: 40, attempted: 2400 },
+      calleeAt("sipp-register-3", 86),
+      undefined,
+      callees
+    );
+
+    // Assert
+    expect(measured.invalidReason).to.equal(
+      "load generator saturated at 40 calls/s (sipp-register-3 at 86% of one core)"
+    );
+  });
+
+  it("should name the callee processes of an instance, the first without a number", () => {
+    expect(calleeProcessName("register", 1)).to.equal("sipp-register");
+    expect(calleeProcessName("uas", 3)).to.equal("sipp-uas-3");
+    expect(calleeProcessNames(2)).to.deep.equal([
+      "sipp-register",
+      "sipp-uas",
+      "sipp-register-2",
+      "sipp-uas-2"
+    ]);
   });
 
   it("should measure a valid step", async () => {

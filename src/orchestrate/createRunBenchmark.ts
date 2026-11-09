@@ -7,6 +7,7 @@ import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import type { Now, Sleep } from "../infra/index.js";
 import {
   type BenchmarkConfig,
+  calleeInstancesOf,
   type ComposeUutConfig,
   type HelmUutConfig,
   isHelmUut,
@@ -32,6 +33,8 @@ import { toKubeSamplerLines } from "./toKubeSamplerLines.js";
 import { countRegistered } from "./countRegistered.js";
 import {
   buildSippRoles,
+  registerUsersFileOf,
+  shareSizeOf,
   splitUsers,
   uacUsersFileOf,
   countUserRows,
@@ -136,8 +139,9 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
   const workers = state.hosts.workers;
   const generatorOf = (instance: number): Host =>
     generatorFor(instance, workers.length);
-  const hostOf = (role: SippRole, instance: number): Host =>
-    role === "uac" ? generatorOf(instance) : "loadgen";
+  /** Every uac and callee instance runs on the generator its number maps to. */
+  const hostOf = (_role: SippRole, instance: number): Host =>
+    generatorOf(instance);
   const workerHosts = workers.map((_, index): Host => `worker-${index + 1}`);
   /** `ssh` to a worker's private address, from the load generator. */
   const sshTo = (index: number) =>
@@ -230,25 +234,33 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     };
     const instances = benchmark.load.instances;
     const uacInstances = Array.from({ length: instances }, (_, i) => i + 1);
+    const calleeInstances = Array.from(
+      { length: calleeInstancesOf(benchmark.load) },
+      (_, i) => i + 1
+    );
     const onGenerator = (host: Host) =>
-      uacInstances
-        .filter((instance) => generatorOf(instance) === host)
-        .map((instance) => containers.sipp("uac", instance));
-    const allSipp = [
-      ...(["register", "uas"] as SippRole[]).map((role) =>
-        containers.sipp(role)
-      ),
-      ...onGenerator("loadgen")
-    ];
-    /** A uac instance on a worker binds to that worker's own address. */
-    const uacIps = Object.fromEntries(
-      uacInstances.flatMap((instance) => {
-        const worker = workerIndexOf(generatorOf(instance));
-        if (worker === null) return [];
-        const address = workers[worker - 1]!;
-        return [[instance, onCluster ? address.publicIp : address.privateIp]];
-      })
-    ) as Record<number, string>;
+      [
+        ...uacInstances.map((instance) => ["uac", instance] as const),
+        ...calleeInstances.flatMap((instance) => [
+          ["register", instance] as const,
+          ["uas", instance] as const
+        ])
+      ]
+        .filter(([role, instance]) => hostOf(role, instance) === host)
+        .map(([role, instance]) => containers.sipp(role, instance));
+    const allSipp = onGenerator("loadgen");
+    /** An instance on a worker binds to that worker's own address. */
+    const addressesOf = (list: number[]) =>
+      Object.fromEntries(
+        list.flatMap((instance) => {
+          const worker = workerIndexOf(generatorOf(instance));
+          if (worker === null) return [];
+          const address = workers[worker - 1]!;
+          return [[instance, onCluster ? address.publicIp : address.privateIp]];
+        })
+      ) as Record<number, string>;
+    const uacIps = addressesOf(uacInstances);
+    const calleeIps = addressesOf(calleeInstances);
     if (instances > 1 && onCluster && cluster?.fixedIps) {
       throw new AgentFailure(
         `${benchmark.id} has load.instances ${instances}, which a local cluster's fixed SIPp addresses don't allow; run it with one instance or on DigitalOcean`
@@ -272,7 +284,8 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
         ...(cluster && onCluster && cluster.fixedIps
           ? { bindIps: cluster.sippIps }
           : {}),
-        uacIps
+        uacIps,
+        calleeIps
       });
     // Fails early, before anything starts, when the rate is missing.
     if (!onCluster) buildRoles(null);
@@ -660,7 +673,13 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     await start(
       "loadgen",
       containers.samplerLoadgen,
-      buildSamplerSpec("loadgen", [], prefix, benchmark.load.instances)
+      buildSamplerSpec(
+        "loadgen",
+        [],
+        prefix,
+        benchmark.load.instances,
+        calleeInstancesOf(benchmark.load)
+      )
     );
   }
 
@@ -713,9 +732,10 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
           name: container(spec.role, spec.instance),
           image: SIPP_IMAGE,
           detach: true,
-          // Several uac processes each get their own pid, so their trace
-          // files (<scenario>_<pid>_.csv) don't overwrite one another
-          ...(benchmark.load.instances > 1 && spec.role === "uac"
+          // Several uac or callee processes each get their own pid, so their
+          // trace files (<scenario>_<pid>_.csv) don't overwrite one another
+          ...(benchmark.load.instances > 1 &&
+          (spec.role === "uac" || calleeInstancesOf(benchmark.load) > 1)
             ? { pidHost: true }
             : {}),
           platform: "linux/amd64",
@@ -743,31 +763,58 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     const uacs = roles.filter(({ role }) => role === "uac");
     const uac = uacs[0] as SippRoleSpec;
     const callees = roles.filter(({ role }) => role !== "uac");
-    if (uacs.length > 1 && benchmark.load.uac.users) {
-      const file = await deps.fs.readFile(
-        `${paths.project}/${benchmark.load.uac.users}`
-      );
+    const registers = callees.filter(({ role }) => role === "register");
+    /** Writes each instance's share of a users file into /raw. */
+    const writeShares = async (
+      text: string,
+      instances: number,
+      fileOf: (instance: number) => string
+    ) => {
       const shares = (() => {
         try {
-          return splitUsers(file, uacs.length);
+          return splitUsers(text, instances);
         } catch (err) {
           throw new AgentFailure(`${benchmarkId}: ${(err as Error).message}`);
         }
       })();
       await Promise.all(
         shares.map((share, index) =>
-          deps.fs.writeFile(`${rawDir}/${uacUsersFileOf(index + 1)}`, share)
+          deps.fs.writeFile(`${rawDir}/${fileOf(index + 1)}`, share)
         )
       );
+    };
+    if (uacs.length > 1 && benchmark.load.uac.users) {
+      await writeShares(
+        await deps.fs.readFile(`${paths.project}/${benchmark.load.uac.users}`),
+        uacs.length,
+        uacUsersFileOf
+      );
     }
-    // Each worker gets its own instances' shares of the uac users
+    if (registers.length > 1 && benchmark.load.register) {
+      await writeShares(
+        await deps.fs.readFile(
+          `${paths.project}/${benchmark.load.register.users}`
+        ),
+        registers.length,
+        registerUsersFileOf
+      );
+    }
+    // Each worker gets the shares of the instances it runs: callers and callees
     await Promise.all(
       workers.map((_, position) => {
         const index = position + 1;
-        const own = uacs
-          .filter(({ instance }) => generatorOf(instance) === `worker-${index}`)
-          .map(({ instance }) => uacUsersFileOf(instance));
-        return benchmark.load.uac.users && own.length > 0
+        const here = (spec: SippRoleSpec) =>
+          generatorOf(spec.instance) === `worker-${index}`;
+        // A worker only runs instances 2 and up, so the shares exist
+        const own = [
+          ...(benchmark.load.uac.users
+            ? uacs.filter(here).map(({ instance }) => uacUsersFileOf(instance))
+            : []),
+          ...registers
+            .filter(here)
+            .map(({ instance }) => registerUsersFileOf(instance))
+        ];
+        return own.length > 0
           ? pushToWorker(index, rawDir, own)
           : run(`worker-${index}`, `mkdir -p ${shellQuote(rawDir)}`);
       })
@@ -776,21 +823,47 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
       (previous, spec) => previous.then(() => startRole(spec)),
       Promise.resolve()
     );
-    const register = callees.find(({ role }) => role === "register");
-    if (register && registerUsers > 0) {
+    if (registers.length > 0 && registerUsers > 0) {
+      const biggest = shareSizeOf(registerUsers, registers.length, 1);
       const timeoutMs =
-        Math.ceil(registerUsers / REGISTER_RATE) * 1000 + REGISTER_GRACE_MS;
-      const registered = await waitForRegistrations(
-        rawDir,
-        register.scenario,
-        registerUsers,
-        deps.now() + timeoutMs
-      );
-      if (registered < registerUsers) {
-        return {
-          startedMs: deps.now(),
-          aborted: `only ${registered} of ${registerUsers} callees registered within ${Math.round(timeoutMs / 1000)} s, so no call was placed`
-        };
+        Math.ceil(biggest / REGISTER_RATE) * 1000 + REGISTER_GRACE_MS;
+      const deadline = deps.now() + timeoutMs;
+      const seconds = Math.round(timeoutMs / 1000);
+      if (registers.length === 1) {
+        const registered = await waitForRegistrations(
+          rawDir,
+          (registers[0] as SippRoleSpec).scenario,
+          registerUsers,
+          deadline
+        );
+        if (registered < registerUsers) {
+          return {
+            startedMs: deps.now(),
+            aborted: `only ${registered} of ${registerUsers} callees registered within ${seconds} s, so no call was placed`
+          };
+        }
+      } else {
+        const counts = await waitForCalleeRegistrations(
+          registers,
+          rawDir,
+          registerUsers,
+          deadline,
+          (instance) => container("register", instance)
+        );
+        const short = counts.filter(
+          ({ registered, expected }) => registered < expected
+        );
+        if (short.length > 0) {
+          return {
+            startedMs: deps.now(),
+            aborted: `${short
+              .map(
+                ({ instance, registered, expected }) =>
+                  `callee ${instance} registered ${registered} of ${expected}`
+              )
+              .join(", ")} within ${seconds} s, so no call was placed`
+          };
+        }
       }
       await deps.log(`[${benchmarkId}] ${registerUsers} callees registered`);
     }
@@ -827,6 +900,75 @@ export function createRunBenchmark(deps: AgentDeps, state: RunState) {
     if (registered >= users || deps.now() >= deadline) return registered;
     await deps.sleep(REGISTER_POLL_MS);
     return waitForRegistrations(rawDir, scenario, users, deadline);
+  }
+
+  /**
+   * Polls every callee instance's counts file until each shows its share of
+   * the users registered or the deadline passes; returns each one's last
+   * count. A callee's file is named after its pid: with several callees each
+   * runs in the host's pid namespace, so the pid is the container's own, and
+   * a worker's file is read on the worker.
+   */
+  async function waitForCalleeRegistrations(
+    registers: SippRoleSpec[],
+    rawDir: string,
+    totalUsers: number,
+    deadline: number,
+    container: (instance: number) => string
+  ): Promise<
+    Array<{ instance: number; registered: number; expected: number }>
+  > {
+    const pids = new Map<number, string>();
+    const countOf = async (spec: SippRoleSpec): Promise<number> => {
+      const host = hostOf(spec.role, spec.instance);
+      if (!pids.has(spec.instance)) {
+        const out = await run(
+          host,
+          `docker inspect -f '{{.State.Pid}}' ${shellQuote(container(spec.instance))}`,
+          60_000
+        );
+        const pid = out.stdout.trim();
+        if (out.code === 0 && /^\d+$/.test(pid)) pids.set(spec.instance, pid);
+      }
+      const pid = pids.get(spec.instance);
+      if (pid === undefined) return 0;
+      const base = basename(spec.scenario).replace(/\.xml$/i, "");
+      const file = `${base}_${pid}_counts.csv`;
+      const text =
+        host === "loadgen"
+          ? await deps.fs.readFile(`${rawDir}/${file}`).catch(() => "")
+          : (
+              await run(
+                host,
+                `cat ${shellQuote(`${rawDir}/${file}`)} 2>/dev/null; true`,
+                60_000
+              )
+            ).stdout;
+      return countRegistered(text);
+    };
+    const read = async () =>
+      Promise.all(
+        registers.map(async (spec) => ({
+          instance: spec.instance,
+          registered: await countOf(spec),
+          expected: shareSizeOf(totalUsers, registers.length, spec.instance)
+        }))
+      );
+    const counts = await read();
+    if (
+      counts.every(({ registered, expected }) => registered >= expected) ||
+      deps.now() >= deadline
+    ) {
+      return counts;
+    }
+    await deps.sleep(REGISTER_POLL_MS);
+    return waitForCalleeRegistrations(
+      registers,
+      rawDir,
+      totalUsers,
+      deadline,
+      container
+    );
   }
 
   async function sippStartTime(

@@ -7,10 +7,15 @@ import {
   measureCapacityStep,
   parseSamplerJsonl,
   parseUdpJsonl,
+  calleeProcessNames,
   readSippResults,
   uacProcessNames
 } from "../analyze/index.js";
-import type { CapacityBenchmarkConfig, LivePoint } from "../schemas/index.js";
+import {
+  calleeInstancesOf,
+  type CapacityBenchmarkConfig,
+  type LivePoint
+} from "../schemas/index.js";
 import { liveAnalyzeDeps } from "./liveAnalyzeDeps.js";
 import type { AgentFs } from "./types.js";
 
@@ -81,6 +86,7 @@ export async function evaluateCapacityStep(input: {
     udp: parseUdpJsonl(await read("udp-loadgen.jsonl"), "udp-loadgen.jsonl"),
     uutProcesses: [],
     uacProcesses: uacProcessNames(benchmark.load.instances),
+    calleeProcesses: calleeProcessNames(calleeInstancesOf(benchmark.load)),
     unit: benchmark.load.unit
   });
   const { p99LatencyMs, failedCallsPct } = benchmark.thresholds;

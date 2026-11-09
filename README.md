@@ -401,8 +401,8 @@ failed call is one SIPp counts as failed, and CPU is in % of one core, so 100 is
 ### Capacity
 
 SIPp adds load in steps, such as 50 more calls/s every minute. With callees (`load.register`),
-the ramp starts only once every callee has registered, with the soak's timeout (`users / 20` +
-60 s) and abort reason. The uac gives up on a message it expects after 10 s, and a call that
+the ramp starts only once every callee process has registered its whole share, with the soak's
+timeout (`users / 20` + 60 s) and abort reason. The uac gives up on a message it expects after 10 s, and a call that
 timed out counts as failed; with a hold, a call's teardown failure is counted when it happens, up
 to `hold` + 10 s after the call starts, so `every` should be at least 4 × (hold + 10 s). For each
 step:
@@ -420,7 +420,7 @@ step:
 perfkit checks the steps in order:
 
 1. **Is the measurement valid?** A step is invalid when the load generator, not the server, was
-   the bottleneck: any SIPp role (the uac, or the callees `sipp-register` and `sipp-uas`) used
+   the bottleneck: any SIPp process (a uac instance, or a callee, `sipp-register` and `sipp-uas`) used
    more than 80% of one core, placed less than 95% of the offered rate,
    placed more than 105% of it (a burst of calls it owed from earlier steps), or the load
    generator dropped UDP packets. Then the verdict is **inconclusive**, the reason
@@ -456,7 +456,8 @@ On the cluster, a restart is a container restart of a sampled pod (its restart c
 - **Callees not registered.** With a register role, the uac starts only once every callee has
   registered. When they have not within `users / 20` + 60 seconds, no call is placed and the
   verdict is **aborted** (`only 150 of 200 callees registered within 70 s, so no call was
-  placed`).
+  placed`). With several callee processes the reason names the one that fell short (`callee 2
+  registered 10 of 67 within 64 s, so no call was placed`).
 - **Memory growth.** For each process, the least-squares slope of its memory (RSS) in MB per
   hour. It fails at the threshold or above: 5.0 MB/h fails a 5 MB/h limit. The headline is the
   steepest process.

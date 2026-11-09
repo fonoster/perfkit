@@ -158,6 +158,12 @@ describe("orchestration helpers", () => {
     );
   });
 
+  it("should name each callee instance's SIPp process apart", () => {
+    expect(buildSamplerSpec("loadgen", [], "", 1, 2)).to.equal(
+      "sipp-uac\tsipp .*-cid_str uac-\nsipp-register\tsipp .*-cid_str register-\nsipp-register-2\tsipp .*-cid_str register2-\nsipp-uas\tsipp .*-cid_str uas-\nsipp-uas-2\tsipp .*-cid_str uas2-\n"
+    );
+  });
+
   it("should stage dist, package.json and only the production dependencies", async () => {
     // Arrange
     const pkg = await fakePackage("1.2.3");

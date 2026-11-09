@@ -5,6 +5,8 @@ import { expect } from "chai";
 import {
   buildSippRoles,
   countUserRows,
+  registerUsersFileOf,
+  shareSizeOf,
   splitUsers,
   uacUsersFileOf
 } from "../../src/orchestrate/buildSippRoles.js";
@@ -534,7 +536,7 @@ describe("buildSippRoles with several uac instances", () => {
     // Assert
     const uacs = roles.filter(({ role }) => role === "uac");
     expect(uacs.map(({ instance }) => instance)).to.deep.equal([1, 2, 3, 4]);
-    expect(roles.filter(({ role }) => role !== "uac")).to.have.length(1);
+    expect(roles.filter(({ role }) => role !== "uac")).to.have.length(4);
     uacs.forEach(({ args, instance }) => {
       const flags = flagsOf(args);
       expect(flags).to.include("-r 25 -rp 1000 -rate_increase 25");
@@ -627,6 +629,142 @@ describe("buildSippRoles with several uac instances", () => {
     expect(uacs).to.have.length(1);
     expect(flagsOf(uacs[0]!.args)).to.include(
       "-inf /project/one-soak/callers.csv"
+    );
+  });
+});
+
+describe("buildSippRoles with several callee instances", () => {
+  const roles = (instances: number, extra = {}) => {
+    const benchmark = capacityWithCallees({
+      instances,
+      rate: { start: 100, step: 100, every: "60s", max: 400 }
+    });
+    return buildSippRoles({
+      benchmark,
+      runId: "RUN1",
+      uutIp: "10.0.0.2",
+      loadgenIp: "10.0.0.3",
+      registerUsers: 200,
+      ...extra
+    });
+  };
+  const calleesOf = (list: ReturnType<typeof roles>) =>
+    list.filter(({ role }) => role === "register");
+
+  it("should start one callee per instance, each with its own port, Call-ID and share of the users", () => {
+    // Act
+    const callees = calleesOf(roles(3));
+
+    // Assert
+    expect(callees.map(({ instance }) => instance)).to.deep.equal([1, 2, 3]);
+    const port = (args: string[]) => args[args.indexOf("-p") + 1];
+    expect(callees.map(({ args }) => port(args))).to.deep.equal([
+      "5070",
+      "5200",
+      "5201"
+    ]);
+    callees.forEach(({ args, instance }) => {
+      const flags = flagsOf(args);
+      expect(flags).to.include(
+        `-cid_str ${instance === 1 ? "register" : `register${instance}`}-run1-%u-%p@%s`
+      );
+      expect(flags).to.include(`-inf /raw/${registerUsersFileOf(instance)}`);
+      expect(flags).to.include(`-key uas_port ${port(args)}`);
+      expect(flags).to.include("-oocsf /project/one-soak/uas_answer.xml");
+    });
+    // 200 users dealt to 3 callees: 67, 67 and 66
+    expect(
+      callees.map(({ args }) => args[args.indexOf("-m") + 1])
+    ).to.deep.equal(["67", "67", "66"]);
+  });
+
+  it("should keep the whole register users file for a single callee", () => {
+    // Act
+    const callees = calleesOf(roles(1));
+
+    // Assert
+    expect(callees).to.have.length(1);
+    expect(flagsOf(callees[0]!.args)).to.include(
+      "-inf /project/one-soak/callees.csv"
+    );
+    expect(flagsOf(callees[0]!.args)).to.include("-m 200 ");
+  });
+
+  it("should bind a callee on another load generator to that machine's address", () => {
+    // Act
+    const callees = calleesOf(roles(3, { calleeIps: { 2: "10.0.0.9" } }));
+
+    // Assert
+    const bound = (instance: number) => {
+      const { args } = callees.find((spec) => spec.instance === instance)!;
+      return args[args.indexOf("-i") + 1];
+    };
+    expect([bound(1), bound(2), bound(3)]).to.deep.equal([
+      "10.0.0.3",
+      "10.0.0.9",
+      "10.0.0.3"
+    ]);
+  });
+
+  it("should keep the uas alone as one process when there is no register", () => {
+    // Arrange: a soak whose callees are a uas only
+    const base = soakConfig();
+    const benchmark = soakBenchmarkConfigSchema.parse({
+      ...base,
+      load: {
+        ...base.load,
+        register: undefined,
+        instances: 3,
+        rate: { cps: 100 }
+      }
+    });
+
+    // Act
+    const list = buildSippRoles({
+      benchmark: benchmark as never,
+      runId: "RUN1",
+      uutIp: "10.0.0.2",
+      loadgenIp: "10.0.0.3",
+      registerUsers: 0
+    });
+
+    // Assert
+    expect(list.filter(({ role }) => role === "uas")).to.have.length(1);
+    expect(list.filter(({ role }) => role === "register")).to.have.length(0);
+  });
+
+  it("should never give a callee a port a uac uses", () => {
+    // Act: 64 instances, the most there can be: 64 callees and 64 uacs
+    const list = roles(64);
+    const ports = list.map(({ args }) => args[args.indexOf("-p") + 1]);
+
+    // Assert
+    expect(ports).to.have.length(128);
+    expect(new Set(ports).size).to.equal(128);
+  });
+});
+
+describe("shareSizeOf", () => {
+  it("should count the rows each of the round-robin shares gets", () => {
+    expect([1, 2, 3].map((i) => shareSizeOf(200, 3, i))).to.deep.equal([
+      67, 67, 66
+    ]);
+    expect([1, 2, 3, 4].map((i) => shareSizeOf(10, 4, i))).to.deep.equal([
+      3, 3, 2, 2
+    ]);
+    expect(shareSizeOf(200, 1, 1)).to.equal(200);
+  });
+
+  it("should agree with splitUsers", () => {
+    // Arrange
+    const text = `SEQUENTIAL\n${Array.from({ length: 23 }, (_, i) => `u${i}`).join("\n")}\n`;
+
+    // Act
+    const shares = splitUsers(text, 5).map((share) => countUserRows(share));
+
+    // Assert
+    expect(shares).to.deep.equal(
+      [1, 2, 3, 4, 5].map((i) => shareSizeOf(23, 5, i))
     );
   });
 });
