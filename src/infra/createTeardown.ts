@@ -6,10 +6,10 @@ import { withErrorHandlingAndValidation } from "../errors/index.js";
 import {
   DELETE_ATTEMPTS,
   DELETE_BACKOFF_MS,
-  POLL_INTERVAL_MS,
   VPC_EMPTY_AFTER_CLUSTER_TIMEOUT_MS,
   VPC_EMPTY_TIMEOUT_MS
 } from "./constants.js";
+import { createDeleteVpc } from "./createDeleteVpc.js";
 import { messageOf } from "./errors.js";
 import { runResourcesSchema } from "./infra.schema.js";
 import type {
@@ -31,10 +31,11 @@ type Outcome =
  * order: the firewall, the droplets and the Kubernetes cluster (with its
  * load balancers and volumes) at the same time, the run's tag, the VPC, and
  * the SSH key unless it is the shared one. Each delete is tried 3 times with
- * backoff. DigitalOcean deletes only an empty VPC, so it first polls the
- * VPC's members until there are none, for at most 5 minutes (10 after a
- * cluster); it skips the VPC when a droplet or the cluster in it could not
- * be deleted.
+ * backoff, except the VPC: DigitalOcean deletes only an empty VPC, and
+ * refuses one with a DOKS cluster's subnets for minutes after the cluster is
+ * gone, so it waits for the VPC to have no members and retries its delete
+ * with backoff for at most 5 minutes (10 after a cluster). It skips the VPC
+ * when a droplet or the cluster in it could not be deleted.
  *
  * It never throws for a failed delete: the result lists every failure, and
  * the caller exits 3 when there is one.
@@ -69,23 +70,7 @@ export function createTeardown(deps: {
     }
   };
 
-  const waitEmpty = async (
-    vpcId: string,
-    deadline: number,
-    minutes: number
-  ): Promise<string | null> => {
-    const members = await deps.client
-      .listVpcMembers(vpcId)
-      .catch((err: unknown) => err as Error);
-    if (Array.isArray(members) && members.length === 0) return null;
-    if (deps.now() >= deadline) {
-      return Array.isArray(members)
-        ? `after ${minutes} minutes: it still has ${members.length} member${members.length === 1 ? "" : "s"}`
-        : `after ${minutes} minutes: ${messageOf(members)}`;
-    }
-    await deps.sleep(POLL_INTERVAL_MS);
-    return waitEmpty(vpcId, deadline, minutes);
-  };
+  const deleteVpc = createDeleteVpc(deps);
 
   const fn = async (
     resources: z.output<typeof runResourcesSchema>
@@ -135,15 +120,11 @@ export function createTeardown(deps: {
       const waitMs = cluster
         ? VPC_EMPTY_AFTER_CLUSTER_TIMEOUT_MS
         : VPC_EMPTY_TIMEOUT_MS;
-      const notEmpty = await waitEmpty(
-        id,
-        deps.now() + waitMs,
-        waitMs / 60_000
-      );
+      const reason = await deleteVpc({ id, timeoutMs: waitMs });
       outcomes.push(
-        notEmpty === null
-          ? await attempt(resource, () => deps.client.deleteVpc(id))
-          : { ok: false, failure: { ...resource, reason: notEmpty } }
+        reason === null
+          ? { ok: true, resource }
+          : { ok: false, failure: { ...resource, reason } }
       );
     }
 

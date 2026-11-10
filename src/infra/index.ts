@@ -10,6 +10,7 @@ export { buildCloudInit } from "./buildCloudInit.js";
 export { buildFirewall } from "./buildFirewall.js";
 export * from "./constants.js";
 export { createAllowSsh } from "./createAllowSsh.js";
+export { createDeleteVpc } from "./createDeleteVpc.js";
 export { createDockerHubRegistry } from "./createDockerHubRegistry.js";
 export { createDoClient, type DoClientInput } from "./createDoClient.js";
 export { createGetPublicIp } from "./createGetPublicIp.js";
