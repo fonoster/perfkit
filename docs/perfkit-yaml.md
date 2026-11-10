@@ -175,7 +175,7 @@ Thresholds:
 | `thresholds.p99LatencyMs` | capacity | ms | p99 time from INVITE to 200 OK. A step at or above it breaks the rule. |
 | `thresholds.failedCallsPct` | capacity, soak | % (0 to 100) | Failed calls. |
 | `thresholds.confirmSteps` | capacity | integer 1 to 5, default 2 | How many steps in a row must break a rule to end the ramp. A step that breaks a rule while the next one passes is a spike: the ramp goes on, the step stays in the report flagged `spike`, and it is not the limit. `1` ends the ramp at the first break. A break on the last step counts as confirmed; a step the load generator could not measure ends the ramp at once. |
-| `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process after the warm-up. |
+| `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process: the slope over the second half of the window after the warm-up. |
 | `thresholds.restarts` | soak | count | Process restarts allowed. |
 
 `capacity` requires `p99LatencyMs` and `failedCallsPct`, and takes `confirmSteps`. `soak` requires exactly

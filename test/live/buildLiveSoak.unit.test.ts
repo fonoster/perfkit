@@ -94,6 +94,36 @@ describe("buildLiveSoak", () => {
     expect(live.memory[1]?.growthMBPerHour).to.equal(null);
   });
 
+  it("should judge growth on the second half of the samples after the warm-up", () => {
+    // Arrange: 30 min warm-up + 120 min; 20 MB/h for the first hour after
+    // the warm-up, flat in the second
+    const rising = samples("one", loadStartedMs, 90, 20);
+    const top = rising.at(-1)?.rssKB ?? 0;
+    const flat = Array.from({ length: 60 * 6 }, (_, i) => ({
+      name: "one",
+      tMs: loadStartedMs + 90 * MIN + (i + 1) * 10_000,
+      rssKB: top
+    }));
+
+    // Act
+    const live = buildLiveSoak({
+      benchmark: SOAK,
+      record: {
+        startedMs: loadStartedMs,
+        loadStartedMs,
+        endedMs: null,
+        points: []
+      },
+      selected: true,
+      nowMs: loadStartedMs + 150 * MIN,
+      estimatedStartMs: null,
+      progress: { samples: [...rising, ...flat], placed: 1, failed: 0 }
+    });
+
+    // Assert
+    expect(live.memory[0]?.growthMBPerHour).to.equal(0);
+  });
+
   it("should be queued with nothing measured before it starts", () => {
     const live = buildLiveSoak({
       benchmark: SOAK,

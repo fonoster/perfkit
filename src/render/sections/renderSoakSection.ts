@@ -13,7 +13,8 @@ import {
   formatMs,
   formatNumber,
   formatPct,
-  formatRate
+  formatRate,
+  formatTime
 } from "../format.js";
 import { esc } from "../html.js";
 import { targetLabel } from "../targetLabel.js";
@@ -114,6 +115,18 @@ function failedClause(rule: SoakRule, unit: string): string {
   return `${formatNumber(rule.measured, 0)} restarts (limit: ${formatNumber(rule.limit, 0)})`;
 }
 
+/**
+ * Which samples the memory growth slope covers, from the rules' `window`;
+ * nothing for reports that predate it.
+ */
+function growthWindowNote(rules: readonly SoakRule[]): string {
+  const rule = rules.find(
+    (r) => r.id === "memoryGrowthMBPerHour" && r.window !== undefined
+  );
+  if (rule?.id !== "memoryGrowthMBPerHour" || !rule.window) return "";
+  return `<p class="card-sub growth-window">Memory growth: slope over the second half, from ${esc(formatTime(rule.window.from))} to ${esc(formatTime(rule.window.to))} UTC</p>`;
+}
+
 function measured(benchmark: MeasuredSoak): string {
   const { unit } = benchmark;
   const failed = benchmark.rules.filter((r) => !r.passed);
@@ -154,7 +167,7 @@ ${narrativeCards(benchmark)}
 ${chart}
 <div class="card card-surface side-card">
 <h3 class="card-title">Stability checks</h3>
-<p class="card-sub">after the ${esc(formatDuration(benchmark.warmupS))} warm-up</p>
+<p class="card-sub">after the ${esc(formatDuration(benchmark.warmupS))} warm-up</p>${growthWindowNote(benchmark.rules)}
 <dl class="rows">${checks}</dl>
 </div>
 </div>

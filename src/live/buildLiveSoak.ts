@@ -3,6 +3,7 @@
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import { memoryGrowthMBPerHour } from "../analyze/memoryGrowthMBPerHour.js";
+import { secondHalfWindow } from "../analyze/secondHalfWindow.js";
 import {
   LIVE_MAX_SAMPLES,
   type LiveSoak,
@@ -20,9 +21,10 @@ const iso = (ms: number | null | undefined) =>
 /**
  * A soak's entry in live.json: how far it is, the calls so far, and each
  * process's raw memory, at most 300 samples. Growth in MB/h, the same
- * least-squares slope as the verdict, appears only once there is a full
- * hour of samples after the warm-up: over minutes it overstates growth
- * while the heap settles.
+ * least-squares slope as the verdict (over the second half of the samples
+ * after the warm-up so far), appears only once there is a full hour of
+ * samples after the warm-up: over minutes it overstates growth while the
+ * heap settles.
  */
 export function buildLiveSoak(input: {
   benchmark: SoakBenchmarkConfig;
@@ -64,7 +66,11 @@ export function buildLiveSoak(input: {
       })),
       growthMBPerHour:
         hourAfterWarmup && warmupEndMs !== null
-          ? memoryGrowthMBPerHour(own, name, warmupEndMs)
+          ? memoryGrowthMBPerHour(
+              own,
+              name,
+              secondHalfWindow(warmupEndMs, last.tMs)
+            )
           : null
     };
   });

@@ -27,6 +27,7 @@ import { soakMetaSchema } from "./rawResults.schema.js";
 import { readRawFile } from "./readRawFile.js";
 import { readSippResults } from "./readSippResults.js";
 import { roundTo } from "./roundTo.js";
+import { secondHalfWindow } from "./secondHalfWindow.js";
 import { sumStatRows } from "./sumStatRows.js";
 import { toResources } from "./toResources.js";
 import type { AnalyzeDeps, Call } from "./types.js";
@@ -55,7 +56,8 @@ const HOUR_MS = 3_600_000;
  * evaluated. It is aborted too when the uac started no call after the
  * warm-up (nothing was measured, so no rule can pass) or left no response
  * times file (no p99 latency). Otherwise the rules are, per process, memory growth (the
- * least-squares slope of RSS in MB per hour, failing at >= the threshold),
+ * least-squares slope of RSS in MB per hour over the second half of the
+ * window after the warm-up, failing at >= the threshold),
  * failed calls (failing at >= the threshold) and restarts (failing above the
  * threshold).
  *
@@ -153,9 +155,17 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
     });
     const { thresholds } = benchmark;
 
+    const window = secondHalfWindow(
+      warmupEndMs,
+      after.at(-1)?.tMs ?? warmupEndMs
+    );
+    const growthWindow = {
+      from: new Date(window.fromMs).toISOString(),
+      to: new Date(window.toMs).toISOString()
+    };
     const growth = uutProcesses.map((name) => ({
       name,
-      slope: memoryGrowthMBPerHour(after, name, warmupEndMs)
+      slope: memoryGrowthMBPerHour(after, name, window)
     }));
     const rules: SoakRule[] = [
       ...growth.map<SoakRule>(({ name, slope }) => ({
@@ -163,7 +173,8 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
         process: name,
         limit: thresholds.memoryGrowthMBPerHour,
         measured: slope,
-        passed: slope < thresholds.memoryGrowthMBPerHour
+        passed: slope < thresholds.memoryGrowthMBPerHour,
+        window: growthWindow
       })),
       {
         id: "failedCallsPct",

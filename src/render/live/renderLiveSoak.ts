@@ -9,7 +9,7 @@ import { liveSectionHead } from "./liveSectionHead.js";
 import type { LiveViewContext } from "./types.js";
 
 export const GROWTH_NOTE =
-  "Memory growth per hour appears once there is a full hour of data after the warm-up. Until then the page shows the raw curve only, because a slope over a few minutes overstates growth while the heap settles.";
+  "Memory growth per hour appears once there is a full hour of data after the warm-up. Until then the page shows the raw curve only, because a slope over a few minutes overstates growth while the heap settles. Like the verdict, it is the slope over the second half of the samples after the warm-up.";
 
 /**
  * A soak on the live page: how far it is and its calls so far, and the

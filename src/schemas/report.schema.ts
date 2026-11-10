@@ -159,7 +159,14 @@ export const soakRuleSchema = z.discriminatedUnion("id", [
   z.strictObject({
     id: z.literal("memoryGrowthMBPerHour"),
     process: nonEmptyString,
-    ...ruleFields
+    ...ruleFields,
+    /**
+     * The samples the slope covers: the second half of the window after the
+     * warm-up. Optional: reports before it have none.
+     */
+    window: z
+      .strictObject({ from: timestampSchema, to: timestampSchema })
+      .optional()
   }),
   z.strictObject({
     id: z.enum(["failedCallsPct", "restarts"]),

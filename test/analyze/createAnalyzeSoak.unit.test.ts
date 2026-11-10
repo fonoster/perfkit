@@ -23,6 +23,11 @@ import {
 } from "./builders.js";
 
 const MB = 1024;
+/** The second half of the default 2 h after a 30 min warm-up from 14:00. */
+const WINDOW = {
+  from: "2026-11-03T15:30:00.000Z",
+  to: "2026-11-03T16:30:00.000Z"
+};
 
 async function analyze(
   spec: Partial<SoakRawSpec> = {},
@@ -74,21 +79,24 @@ describe("createAnalyzeSoak", () => {
           process: "one",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         {
           id: "memoryGrowthMBPerHour",
           process: "edgeport",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         {
           id: "memoryGrowthMBPerHour",
           process: "postgres",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         { id: "failedCallsPct", limit: 0.1, measured: 0, passed: true },
         { id: "restarts", limit: 0, measured: 0, passed: true }
@@ -117,9 +125,57 @@ describe("createAnalyzeSoak", () => {
           process: "edgeport",
           limit: 5,
           measured: 6,
-          passed: false
+          passed: false,
+          window: WINDOW
         }
       ]);
+    });
+
+    it("should pass RSS that climbs for 15 min after the warm-up, then stays flat within ±25 MB", async () => {
+      // Arrange: start-up climbs 2,200 to 2,310 MB in 15 min (the shape of
+      // Routr run 42699126885), then ±25 MB of noise; over the whole window
+      // the slope is about 20 MB/h
+      const noise = (hours: number) =>
+        25 * Math.sin(hours * 60 * 2.399) * Math.cos(hours * 60 * 0.7);
+      const rssAt = (hours: number) =>
+        hours < 0.25 ? 2200 + Math.max(0, hours) * 440 : 2310 + noise(hours);
+
+      // Act
+      const result = measured(
+        await analyze({
+          processAt: (name, hours) => ({
+            rssKB: Math.round((name === "one" ? rssAt(hours) : 100) * MB)
+          })
+        })
+      );
+
+      // Assert
+      const one = result.rules[0];
+      expect(one).to.include({ process: "one", passed: true });
+      expect(Math.abs(one?.measured ?? Infinity)).to.be.below(5);
+      expect(result.verdict).to.equal("passed");
+    });
+
+    it("should fail a steady 10 MB/h rise", async () => {
+      // Act
+      const result = measured(
+        await analyze({
+          processAt: (name, hours) => ({
+            rssKB: Math.round((name === "one" ? 2300 + 10 * hours : 100) * MB)
+          })
+        })
+      );
+
+      // Assert
+      expect(result.verdict).to.equal("failed");
+      expect(result.rules[0]).to.deep.equal({
+        id: "memoryGrowthMBPerHour",
+        process: "one",
+        limit: 5,
+        measured: 10,
+        passed: false,
+        window: WINDOW
+      });
     });
 
     it("should fail at exactly 5.0 MB/h", async () => {

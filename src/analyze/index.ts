@@ -29,6 +29,7 @@ export { createNodeAnalyzeDeps } from "./createNodeAnalyzeDeps.js";
 export { durationToSeconds } from "./durationToSeconds.js";
 export { leastSquaresSlope } from "./leastSquaresSlope.js";
 export { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
+export { secondHalfWindow } from "./secondHalfWindow.js";
 export {
   calleeProcessName,
   calleeProcessNames,
