@@ -394,6 +394,20 @@ describe("perfkitConfigSchema", () => {
       ]);
     });
 
+    it("should reject a soak settle period that is not shorter than its duration", () => {
+      const raw = loadConfig();
+      raw.benchmarks[1].settle = raw.benchmarks[1].duration;
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([
+        `benchmarks[1].settle: expected a settle period shorter than duration (${raw.benchmarks[1].duration})`
+      ]);
+    });
+
+    it("should accept a soak settle period shorter than its duration", () => {
+      const raw = loadConfig();
+      raw.benchmarks[1].settle = "15m";
+      expect(errorsOf(perfkitConfigSchema, raw)).to.deep.equal([]);
+    });
+
     it("should require the project, infra, image and benchmark fields", () => {
       const raw = loadConfig();
       ["name", "repo", "siteUrl", "accent", "title", "lead"].forEach((key) => {

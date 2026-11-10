@@ -29,7 +29,9 @@ export { createNodeAnalyzeDeps } from "./createNodeAnalyzeDeps.js";
 export { durationToSeconds } from "./durationToSeconds.js";
 export { leastSquaresSlope } from "./leastSquaresSlope.js";
 export { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
-export { secondHalfWindow } from "./secondHalfWindow.js";
+export { memoryGrowthWindow } from "./memoryGrowthWindow.js";
+export { DEFAULT_SETTLE_S, settleSeconds } from "./settleSeconds.js";
+export { theilSenSlope, THEIL_SEN_MAX_POINTS } from "./theilSenSlope.js";
 export {
   calleeProcessName,
   calleeProcessNames,

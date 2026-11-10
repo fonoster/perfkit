@@ -129,6 +129,7 @@ the other kind rejects them.
 | `narrative.how` | string | yes | | How the load is driven and what the verdict checks. |
 | `duration` | duration | *soak*: yes | | How long the load runs. |
 | `warmup` | duration | *soak*: yes; *capacity*: no (`0s`) | | *soak*: excluded from every verdict. *capacity*: the first step still runs its full `every`, but its measurement starts `warmup` after the step starts, so a cold server's first seconds don't count. Shorter than `load.rate.every`. |
+| `settle` | duration | *soak* only: no | `30m`, or half of `duration` when that is shorter | How long after the warm-up memory growth leaves out while the heap settles after start-up. The other rules count from the end of the warm-up. Shorter than `duration`. |
 | `uut` | object | yes | | Either `uut.compose` (with `uut.processes`) on the single server, or `uut.helm` on the cluster. |
 | `uut.compose` | path | yes, without `uut.helm` | | The Compose file the unit under test runs. |
 | `uut.setup` | path | no | none | A Node script that runs once the unit under test is up, for example to seed data. |
@@ -175,7 +176,7 @@ Thresholds:
 | `thresholds.p99LatencyMs` | capacity | ms | p99 time from INVITE to 200 OK. A step at or above it breaks the rule. |
 | `thresholds.failedCallsPct` | capacity, soak | % (0 to 100) | Failed calls. |
 | `thresholds.confirmSteps` | capacity | integer 1 to 5, default 2 | How many steps in a row must break a rule to end the ramp. A step that breaks a rule while the next one passes is a spike: the ramp goes on, the step stays in the report flagged `spike`, and it is not the limit. `1` ends the ramp at the first break. A break on the last step counts as confirmed; a step the load generator could not measure ends the ramp at once. |
-| `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process: the slope over the second half of the window after the warm-up. |
+| `thresholds.memoryGrowthMBPerHour` | soak | MB/h | Memory growth of each process: the Theil–Sen slope from the end of the settle period to the end of the load. |
 | `thresholds.restarts` | soak | count | Process restarts allowed. |
 
 `capacity` requires `p99LatencyMs` and `failedCallsPct`, and takes `confirmSteps`. `soak` requires exactly

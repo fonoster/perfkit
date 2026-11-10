@@ -186,10 +186,11 @@ describe("the report page", () => {
       const soak = report.benchmarks.find(
         (b: { id: string }) => b.id === "one-soak"
       );
+      soak.settleS = 1800;
       for (const rule of soak.rules) {
         if (rule.id === "memoryGrowthMBPerHour") {
           rule.window = {
-            from: "2026-11-03T15:30:00.000Z",
+            from: "2026-11-03T15:00:00.000Z",
             to: "2026-11-03T16:30:00.000Z"
           };
         }
@@ -202,7 +203,7 @@ describe("the report page", () => {
 
       // Assert
       expect(textOf($, "#one-soak .growth-window")).to.equal(
-        "Memory growth: slope over the second half, from 15:30 to 16:30 UTC"
+        "Memory growth: Theil–Sen slope from 15:00 to 16:30 UTC, after a 30 min settle"
       );
       expect(old.latest()("#one-soak .growth-window")).to.have.length(0);
     });

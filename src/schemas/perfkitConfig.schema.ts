@@ -14,6 +14,7 @@ import { checkUniqueIds } from "./checkUniqueIds.js";
 import { projectLiveSchema } from "./report.schema.js";
 import { checkStartCoversInstances } from "./checkStartCoversInstances.js";
 import { checkStepEveryMultipleOfSippInterval } from "./checkStepEveryMultipleOfSippInterval.js";
+import { checkSettleShorterThanDuration } from "./checkSettleShorterThanDuration.js";
 import { checkWarmupShorterThanStep } from "./checkWarmupShorterThanStep.js";
 import {
   benchmarkIdSchema,
@@ -341,18 +342,24 @@ export const capacityBenchmarkConfigSchema = z
   .superRefine(checkStepEveryMultipleOfSippInterval)
   .superRefine(checkStartCoversInstances);
 
-export const soakBenchmarkConfigSchema = z.strictObject({
-  id: benchmarkIdSchema,
-  kind: z.literal("soak"),
-  title: nonEmptyString,
-  narrative: narrativeSchema,
-  duration: durationSchema,
-  warmup: durationSchema,
-  uut: configUutSchema,
-  load: soakLoadSchema,
-  telemetry: telemetrySchema,
-  thresholds: soakThresholdsSchema
-});
+export const soakBenchmarkConfigSchema = z
+  .strictObject({
+    id: benchmarkIdSchema,
+    kind: z.literal("soak"),
+    title: nonEmptyString,
+    narrative: narrativeSchema,
+    duration: durationSchema,
+    warmup: durationSchema,
+    // Memory growth ignores this long after the warm-up while the heap
+    // settles; the other rules don't. Default: 30m, or half of duration
+    // when that is shorter (settleSeconds).
+    settle: durationSchema.optional(),
+    uut: configUutSchema,
+    load: soakLoadSchema,
+    telemetry: telemetrySchema,
+    thresholds: soakThresholdsSchema
+  })
+  .superRefine(checkSettleShorterThanDuration);
 
 export const benchmarkConfigSchema = z.discriminatedUnion("kind", [
   capacityBenchmarkConfigSchema,

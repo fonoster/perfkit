@@ -3,7 +3,8 @@
  */
 import { durationToSeconds } from "../analyze/durationToSeconds.js";
 import { memoryGrowthMBPerHour } from "../analyze/memoryGrowthMBPerHour.js";
-import { secondHalfWindow } from "../analyze/secondHalfWindow.js";
+import { memoryGrowthWindow } from "../analyze/memoryGrowthWindow.js";
+import { settleSeconds } from "../analyze/settleSeconds.js";
 import {
   LIVE_MAX_SAMPLES,
   type LiveSoak,
@@ -21,10 +22,10 @@ const iso = (ms: number | null | undefined) =>
 /**
  * A soak's entry in live.json: how far it is, the calls so far, and each
  * process's raw memory, at most 300 samples. Growth in MB/h, the same
- * least-squares slope as the verdict (over the second half of the samples
- * after the warm-up so far), appears only once there is a full hour of
- * samples after the warm-up: over minutes it overstates growth while the
- * heap settles.
+ * Theil–Sen slope as the verdict (from the end of the warm-up plus the
+ * settle period to the last sample, or the end of the load), appears only
+ * once there is a full hour of samples after the settle period: over
+ * minutes it overstates growth.
  */
 export function buildLiveSoak(input: {
   benchmark: SoakBenchmarkConfig;
@@ -51,13 +52,20 @@ export function buildLiveSoak(input: {
   const warmupEndMs =
     loadStartedMs === null ? null : loadStartedMs + warmupS * 1000;
   const samples = progress?.samples ?? [];
+  const settleS = settleSeconds(benchmark);
   const memory = uutProcessNames(benchmark).map((name) => {
     const own = samples.filter((sample) => sample.name === name);
     const last = own.at(-1);
-    const hourAfterWarmup =
-      warmupEndMs !== null &&
-      last !== undefined &&
-      last.tMs - warmupEndMs >= HOUR_MS;
+    const window =
+      warmupEndMs === null || loadStartedMs === null || last === undefined
+        ? null
+        : memoryGrowthWindow({
+            warmupEndMs,
+            settleS,
+            loadEndMs: Math.min(last.tMs, loadStartedMs + plannedS * 1000)
+          });
+    const hourAfterSettle =
+      window !== null && window.toMs - window.fromMs >= HOUR_MS;
     return {
       name,
       samples: downsample(own, LIVE_MAX_SAMPLES).map((sample) => ({
@@ -65,12 +73,8 @@ export function buildLiveSoak(input: {
         rssMB: Math.round((sample.rssKB / 1024) * 10) / 10
       })),
       growthMBPerHour:
-        hourAfterWarmup && warmupEndMs !== null
-          ? memoryGrowthMBPerHour(
-              own,
-              name,
-              secondHalfWindow(warmupEndMs, last.tMs)
-            )
+        hourAfterSettle && window !== null
+          ? memoryGrowthMBPerHour(own, name, window)
           : null
     };
   });

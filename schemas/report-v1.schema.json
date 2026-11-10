@@ -1123,6 +1123,10 @@
                     "type": "number",
                     "minimum": 0
                   },
+                  "settleS": {
+                    "type": "number",
+                    "minimum": 0
+                  },
                   "tool": {
                     "type": "string",
                     "minLength": 1

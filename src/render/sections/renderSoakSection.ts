@@ -119,12 +119,16 @@ function failedClause(rule: SoakRule, unit: string): string {
  * Which samples the memory growth slope covers, from the rules' `window`;
  * nothing for reports that predate it.
  */
-function growthWindowNote(rules: readonly SoakRule[]): string {
-  const rule = rules.find(
+function growthWindowNote(benchmark: MeasuredSoak): string {
+  const rule = benchmark.rules.find(
     (r) => r.id === "memoryGrowthMBPerHour" && r.window !== undefined
   );
   if (rule?.id !== "memoryGrowthMBPerHour" || !rule.window) return "";
-  return `<p class="card-sub growth-window">Memory growth: slope over the second half, from ${esc(formatTime(rule.window.from))} to ${esc(formatTime(rule.window.to))} UTC</p>`;
+  const settle =
+    benchmark.settleS === undefined
+      ? ""
+      : `, after a ${formatDuration(benchmark.settleS)} settle`;
+  return `<p class="card-sub growth-window">Memory growth: Theil–Sen slope from ${esc(formatTime(rule.window.from))} to ${esc(formatTime(rule.window.to))} UTC${esc(settle)}</p>`;
 }
 
 function measured(benchmark: MeasuredSoak): string {
@@ -167,7 +171,7 @@ ${narrativeCards(benchmark)}
 ${chart}
 <div class="card card-surface side-card">
 <h3 class="card-title">Stability checks</h3>
-<p class="card-sub">after the ${esc(formatDuration(benchmark.warmupS))} warm-up</p>${growthWindowNote(benchmark.rules)}
+<p class="card-sub">after the ${esc(formatDuration(benchmark.warmupS))} warm-up</p>${growthWindowNote(benchmark)}
 <dl class="rows">${checks}</dl>
 </div>
 </div>
