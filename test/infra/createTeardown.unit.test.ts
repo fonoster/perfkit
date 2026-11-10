@@ -127,6 +127,22 @@ describe("createTeardown", () => {
       expect(clock.now - start).to.equal(5 * 60 * 1000);
     });
 
+    it("should wait out a VPC delete refused for its active subnets", async () => {
+      // Arrange
+      const { client, teardown, resources } = seeded();
+      client.failures.deleteVpc = (n) =>
+        n <= 4 ? "Can not delete VPC with active Subnets" : undefined;
+
+      // Act
+      const result = await teardown(resources(false));
+
+      // Assert
+      expect(result.failures).to.deep.equal([]);
+      expect(result.deleted.map(({ kind }) => kind)).to.include("VPC");
+      expect(client.callsTo("deleteVpc")).to.have.length(5);
+      expect(client.leftovers().vpcs).to.deep.equal([]);
+    });
+
     it("should do nothing for a run that created nothing", async () => {
       // Arrange
       const { client, teardown } = seeded();

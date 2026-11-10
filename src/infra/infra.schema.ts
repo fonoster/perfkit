@@ -203,6 +203,11 @@ export const sweepInputSchema = z.strictObject({
   dryRun: z.boolean().default(false)
 });
 
+export const deleteVpcInputSchema = z.strictObject({
+  id: z.string().min(1),
+  timeoutMs: z.number().int().positive()
+});
+
 export type PlanRunInput = z.input<typeof planRunInputSchema>;
 export type ResolveImageDigestsInput = z.infer<
   typeof resolveImageDigestsInputSchema
@@ -210,4 +215,5 @@ export type ResolveImageDigestsInput = z.infer<
 export type ProvisionOptions = z.input<typeof provisionOptionsSchema>;
 export type AllowSshInput = z.infer<typeof allowSshInputSchema>;
 export type SweepInput = z.input<typeof sweepInputSchema>;
+export type DeleteVpcInput = z.infer<typeof deleteVpcInputSchema>;
 export type WithRunOptions = z.input<typeof withRunInputSchema>["options"];
