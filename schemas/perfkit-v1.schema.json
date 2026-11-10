@@ -596,6 +596,10 @@
                 "type": "string",
                 "pattern": "^\\d+[smh]$"
               },
+              "settle": {
+                "type": "string",
+                "pattern": "^\\d+[smh]$"
+              },
               "uut": {
                 "anyOf": [
                   {

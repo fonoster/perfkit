@@ -66,10 +66,10 @@ describe("buildLiveSoak", () => {
     ]);
   });
 
-  it("should give the verdict's growth once a full hour after the warm-up is in", () => {
-    // Arrange: 30 min warm-up + 61 min
+  it("should give the verdict's growth once a full hour after the settle period is in", () => {
+    // Arrange: 30 min warm-up + 30 min settle + 61 min
     const progress = {
-      samples: samples("one", loadStartedMs, 91, 2),
+      samples: samples("one", loadStartedMs, 121, 2),
       placed: 1,
       failed: 0
     };
@@ -84,7 +84,7 @@ describe("buildLiveSoak", () => {
         points: []
       },
       selected: true,
-      nowMs: loadStartedMs + 91 * MIN,
+      nowMs: loadStartedMs + 121 * MIN,
       estimatedStartMs: null,
       progress
     });
@@ -92,6 +92,36 @@ describe("buildLiveSoak", () => {
     // Assert
     expect(live.memory[0]?.growthMBPerHour).to.be.closeTo(2, 0.01);
     expect(live.memory[1]?.growthMBPerHour).to.equal(null);
+  });
+
+  it("should leave the settle period out of the growth", () => {
+    // Arrange: 30 min warm-up + 120 min; 20 MB/h until the 30 min settle
+    // period after the warm-up ends, flat after
+    const rising = samples("one", loadStartedMs, 60, 20);
+    const top = rising.at(-1)?.rssKB ?? 0;
+    const flat = Array.from({ length: 90 * 6 }, (_, i) => ({
+      name: "one",
+      tMs: loadStartedMs + 60 * MIN + (i + 1) * 10_000,
+      rssKB: top
+    }));
+
+    // Act
+    const live = buildLiveSoak({
+      benchmark: SOAK,
+      record: {
+        startedMs: loadStartedMs,
+        loadStartedMs,
+        endedMs: null,
+        points: []
+      },
+      selected: true,
+      nowMs: loadStartedMs + 150 * MIN,
+      estimatedStartMs: null,
+      progress: { samples: [...rising, ...flat], placed: 1, failed: 0 }
+    });
+
+    // Assert
+    expect(live.memory[0]?.growthMBPerHour).to.equal(0);
   });
 
   it("should be queued with nothing measured before it starts", () => {

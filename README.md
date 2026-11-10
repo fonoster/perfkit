@@ -506,9 +506,15 @@ On the cluster, a restart is a container restart of a sampled pod (its restart c
   verdict is **aborted** (`only 150 of 200 callees registered within 70 s, so no call was
   placed`). With several callee processes the reason names the one that fell short (`callee 2
   registered 10 of 67 within 64 s, so no call was placed`).
-- **Memory growth.** For each process, the least-squares slope of its memory (RSS) in MB per
-  hour. It fails at the threshold or above: 5.0 MB/h fails a 5 MB/h limit. The headline is the
-  steepest process.
+- **Memory growth.** For each process (or Kubernetes pod), the Theil–Sen slope of its memory
+  (RSS) in MB per hour: the median of the slopes between every pair of samples (an evenly
+  spaced subset of 600 on long runs). The window starts after the warm-up plus a settle period
+  (`settle`, by default 30 minutes, or half of `duration` when that is shorter), so a heap that
+  climbs while it settles after start-up does not count, and ends when the load ends, so the
+  samples taken while it winds down don't either. A dip or a spike moves the median far less
+  than a least-squares fit; a steady leak still shows. It fails at the threshold or above:
+  5.0 MB/h fails a 5 MB/h limit. The headline is the steepest process, and the page says which
+  window the slope covers.
 - **Failed calls.** Failed % over every call after the warm-up. It fails at the threshold or
   above.
 - **Restarts.** A process whose PID changed, or that was missing from a sample, restarted once.

@@ -5,7 +5,10 @@ import { expect } from "chai";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import sinon from "sinon";
-import { createAnalyzeSoak } from "../../src/analyze/index.js";
+import {
+  createAnalyzeSoak,
+  leastSquaresSlope
+} from "../../src/analyze/index.js";
 import { ValidationError } from "../../src/errors/index.js";
 import {
   soakBenchmarkResultSchema,
@@ -23,6 +26,11 @@ import {
 } from "./builders.js";
 
 const MB = 1024;
+/** 2 h after a 30 min warm-up from 14:00, less the 30 min settle period. */
+const WINDOW = {
+  from: "2026-11-03T15:00:00.000Z",
+  to: "2026-11-03T16:30:00.000Z"
+};
 
 async function analyze(
   spec: Partial<SoakRawSpec> = {},
@@ -74,21 +82,24 @@ describe("createAnalyzeSoak", () => {
           process: "one",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         {
           id: "memoryGrowthMBPerHour",
           process: "edgeport",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         {
           id: "memoryGrowthMBPerHour",
           process: "postgres",
           limit: 5,
           measured: 0,
-          passed: true
+          passed: true,
+          window: WINDOW
         },
         { id: "failedCallsPct", limit: 0.1, measured: 0, passed: true },
         { id: "restarts", limit: 0, measured: 0, passed: true }
@@ -117,9 +128,126 @@ describe("createAnalyzeSoak", () => {
           process: "edgeport",
           limit: 5,
           measured: 6,
-          passed: false
+          passed: false,
+          window: WINDOW
         }
       ]);
+    });
+
+    it("should pass RSS that climbs for 15 min after the warm-up, then stays flat within ±25 MB", async () => {
+      // Arrange: start-up climbs 2,200 to 2,310 MB in 15 min (the shape of
+      // Routr run 42699126885), then ±25 MB of noise; over the whole window
+      // the slope is about 20 MB/h
+      const noise = (hours: number) =>
+        25 * Math.sin(hours * 60 * 2.399) * Math.cos(hours * 60 * 0.7);
+      const rssAt = (hours: number) =>
+        hours < 0.25 ? 2200 + Math.max(0, hours) * 440 : 2310 + noise(hours);
+
+      // Act
+      const result = measured(
+        await analyze({
+          processAt: (name, hours) => ({
+            rssKB: Math.round((name === "one" ? rssAt(hours) : 100) * MB)
+          })
+        })
+      );
+
+      // Assert
+      const one = result.rules[0];
+      expect(one).to.include({ process: "one", passed: true });
+      expect(Math.abs(one?.measured ?? Infinity)).to.be.below(5);
+      expect(result.verdict).to.equal("passed");
+    });
+
+    it("should fail a steady 10 MB/h rise", async () => {
+      // Act
+      const result = measured(
+        await analyze({
+          processAt: (name, hours) => ({
+            rssKB: Math.round((name === "one" ? 2300 + 10 * hours : 100) * MB)
+          })
+        })
+      );
+
+      // Assert
+      expect(result.verdict).to.equal("failed");
+      expect(result.rules[0]).to.deep.equal({
+        id: "memoryGrowthMBPerHour",
+        process: "one",
+        limit: 5,
+        measured: 10,
+        passed: false,
+        window: WINDOW
+      });
+    });
+
+    it("should pass Routr run 42699126885's RoutrOne: start-up climb, then flat with a dip", async () => {
+      // Arrange: its RSS once a minute; it climbs until about minute 25,
+      // then stays at 2,280 to 2,352 MB with a dip at minutes 60 to 80
+      const { rssMB } = JSON.parse(
+        readFileSync(
+          join(FIXTURES, "soak", "routr-42699126885-one-rss.json"),
+          "utf8"
+        )
+      ) as { rssMB: number[] };
+      const rssAt = (hours: number) =>
+        rssMB[Math.min(130, Math.max(0, Math.round(hours * 60 + 10)))] ?? 0;
+      const wholeWindow = leastSquaresSlope(
+        rssMB.slice(10).map((y, i) => ({ x: i / 60, y }))
+      );
+
+      // Act
+      const result = measured(
+        await analyze(
+          {
+            warmupS: 600,
+            afterS: 7200,
+            processAt: (name, hours) => ({
+              rssKB: Math.round((name === "one" ? rssAt(hours) : 100) * MB)
+            })
+          },
+          soakConfig({ warmup: "10m" })
+        )
+      );
+
+      // Assert: a least-squares fit from the warm-up on failed it
+      expect(wholeWindow).to.be.above(5);
+      expect(result.rules[0]).to.include({ process: "one", passed: true });
+      expect(Math.abs(result.rules[0]?.measured ?? Infinity)).to.be.below(1);
+    });
+
+    it("should leave samples after the end of the load out of the growth", async () => {
+      // Arrange: flat during the load, then 500 MB/h for 10 min after it
+      const result = measured(
+        await analyze({
+          tailS: 600,
+          processAt: (name, hours) => ({
+            rssKB: Math.round((100 + Math.max(0, hours - 2) * 500) * MB)
+          })
+        })
+      );
+
+      // Assert
+      expect(result.rules[0]).to.deep.equal({
+        id: "memoryGrowthMBPerHour",
+        process: "one",
+        limit: 5,
+        measured: 0,
+        passed: true,
+        window: WINDOW
+      });
+    });
+
+    it("should start the window after the soak's own settle period", async () => {
+      // Act
+      const result = measured(await analyze({}, soakConfig({ settle: "45m" })));
+
+      // Assert
+      expect(result.settleS).to.equal(2700);
+      expect(result.rules[0]).to.have.deep.property("window", {
+        from: "2026-11-03T15:15:00.000Z",
+        to: "2026-11-03T16:30:00.000Z"
+      });
     });
 
     it("should fail at exactly 5.0 MB/h", async () => {
@@ -344,9 +472,9 @@ describe("createAnalyzeSoak", () => {
         soakConfig({ duration: "20m", warmup: "5m" })
       );
 
-      // Assert
+      // Assert: the default settle period is half of a short duration
       expect(result.verdict).to.equal("passed");
-      expect(result).to.have.property("rules");
+      expect(result).to.have.property("settleS", 600);
     });
 
     it("should compute hops from the spans after the warm-up", async () => {

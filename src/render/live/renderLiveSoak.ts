@@ -9,12 +9,12 @@ import { liveSectionHead } from "./liveSectionHead.js";
 import type { LiveViewContext } from "./types.js";
 
 export const GROWTH_NOTE =
-  "Memory growth per hour appears once there is a full hour of data after the warm-up. Until then the page shows the raw curve only, because a slope over a few minutes overstates growth while the heap settles.";
+  "Memory growth per hour appears once there is a full hour of data after the warm-up and the settle period. Until then the page shows the raw curve only, because a slope over a few minutes overstates growth while the heap settles. Like the verdict, it is the Theil–Sen slope from the end of the settle period.";
 
 /**
  * A soak on the live page: how far it is and its calls so far, and the
  * raw memory per process with the warm-up shaded and a "now" line. MB/h
- * shows only once a full hour after the warm-up is in.
+ * shows only once a full hour after the warm-up and the settle period is in.
  */
 export function renderLiveSoak(
   benchmark: LiveSoak,

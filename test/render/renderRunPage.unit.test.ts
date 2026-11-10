@@ -180,6 +180,34 @@ describe("the report page", () => {
       expect(textOf($, "#one-soak .hop-legend")).to.contain("edgeport4.1 ms");
     });
 
+    it("should say which window the memory growth slope covers, when the report has it", async () => {
+      // Arrange
+      const report = loadReport("passed");
+      const soak = report.benchmarks.find(
+        (b: { id: string }) => b.id === "one-soak"
+      );
+      soak.settleS = 1800;
+      for (const rule of soak.rules) {
+        if (rule.id === "memoryGrowthMBPerHour") {
+          rule.window = {
+            from: "2026-11-03T15:00:00.000Z",
+            to: "2026-11-03T16:30:00.000Z"
+          };
+        }
+      }
+      const site = await renderSite(report, loadHistory(RUNS_4));
+      const old = await renderSite(loadReport("passed"), loadHistory(RUNS_4));
+
+      // Act
+      const $ = site.latest();
+
+      // Assert
+      expect(textOf($, "#one-soak .growth-window")).to.equal(
+        "Memory growth: Theil–Sen slope from 15:00 to 16:30 UTC, after a 30 min settle"
+      );
+      expect(old.latest()("#one-soak .growth-window")).to.have.length(0);
+    });
+
     it("should list the test setup and the command", async () => {
       // Arrange
       const site = await renderSite(loadReport("passed"), loadHistory(RUNS_4));

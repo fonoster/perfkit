@@ -18,6 +18,7 @@ import { countRestarts } from "./countRestarts.js";
 import { durationToSeconds } from "./durationToSeconds.js";
 import { listRawDir } from "./listRawDir.js";
 import { memoryGrowthMBPerHour } from "./memoryGrowthMBPerHour.js";
+import { memoryGrowthWindow } from "./memoryGrowthWindow.js";
 import { nearestRank } from "./nearestRank.js";
 import { parseJsonDocument } from "./parseJsonDocument.js";
 import { parseOtlpSpanLines } from "./parseOtlpSpans.js";
@@ -27,6 +28,7 @@ import { soakMetaSchema } from "./rawResults.schema.js";
 import { readRawFile } from "./readRawFile.js";
 import { readSippResults } from "./readSippResults.js";
 import { roundTo } from "./roundTo.js";
+import { settleSeconds } from "./settleSeconds.js";
 import { sumStatRows } from "./sumStatRows.js";
 import { toResources } from "./toResources.js";
 import type { AnalyzeDeps, Call } from "./types.js";
@@ -55,7 +57,8 @@ const HOUR_MS = 3_600_000;
  * evaluated. It is aborted too when the uac started no call after the
  * warm-up (nothing was measured, so no rule can pass) or left no response
  * times file (no p99 latency). Otherwise the rules are, per process, memory growth (the
- * least-squares slope of RSS in MB per hour, failing at >= the threshold),
+ * Theil–Sen slope of RSS in MB per hour from the end of the warm-up plus
+ * the settle period to the end of the load, failing at >= the threshold),
  * failed calls (failing at >= the threshold) and restarts (failing above the
  * threshold).
  *
@@ -153,9 +156,22 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
     });
     const { thresholds } = benchmark;
 
+    const settleS = settleSeconds(benchmark);
+    const window = memoryGrowthWindow({
+      warmupEndMs,
+      settleS,
+      loadEndMs: Math.min(
+        Date.parse(meta.endedAt),
+        after.at(-1)?.tMs ?? warmupEndMs
+      )
+    });
+    const growthWindow = {
+      from: new Date(window.fromMs).toISOString(),
+      to: new Date(window.toMs).toISOString()
+    };
     const growth = uutProcesses.map((name) => ({
       name,
-      slope: memoryGrowthMBPerHour(after, name, warmupEndMs)
+      slope: memoryGrowthMBPerHour(after, name, window)
     }));
     const rules: SoakRule[] = [
       ...growth.map<SoakRule>(({ name, slope }) => ({
@@ -163,7 +179,8 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
         process: name,
         limit: thresholds.memoryGrowthMBPerHour,
         measured: slope,
-        passed: slope < thresholds.memoryGrowthMBPerHour
+        passed: slope < thresholds.memoryGrowthMBPerHour,
+        window: growthWindow
       })),
       {
         id: "failedCallsPct",
@@ -200,6 +217,7 @@ export function createAnalyzeSoak(deps: AnalyzeDeps) {
       verdict: rules.every((rule) => rule.passed) ? "passed" : "failed",
       reason: null,
       warmupS,
+      settleS,
       load: meta.load,
       rules,
       headline: {

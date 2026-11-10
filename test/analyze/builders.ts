@@ -97,6 +97,7 @@ export function soakConfig(
   overrides: {
     duration?: string;
     warmup?: string;
+    settle?: string;
     memoryGrowthMBPerHour?: number;
     otlp?: boolean;
   } = {}
@@ -108,6 +109,7 @@ export function soakConfig(
     narrative,
     duration: overrides.duration ?? "2h",
     warmup: overrides.warmup ?? "30m",
+    ...(overrides.settle ? { settle: overrides.settle } : {}),
     uut: {
       compose: "one-soak/compose.yaml",
       processes: [
@@ -361,6 +363,8 @@ export interface SoakRawSpec {
   warmupS: number;
   /** How long the samples go on after the warm-up, s. */
   afterS: number;
+  /** Samples taken after the load ended (meta.endedAt), s. Default 0. */
+  tailS?: number;
   /**
    * A process's reading at `hours` since the warm-up ended (negative during
    * it), or null when the sampler did not find it. Default: pid 41, 100 MB.
@@ -386,7 +390,8 @@ export function soakRaw(spec: SoakRawSpec): Record<string, string> {
   const warmupEndMs = START_MS + spec.warmupS * 1000;
   const endMs = warmupEndMs + spec.afterS * 1000;
   const ticks = Math.floor((endMs - START_MS) / SOAK_TICK_MS);
-  const sampler = Array.from({ length: ticks + 1 }, (_, i) => {
+  const tailTicks = Math.floor(((spec.tailS ?? 0) * 1000) / SOAK_TICK_MS);
+  const sampler = Array.from({ length: ticks + tailTicks + 1 }, (_, i) => {
     const tMs = START_MS + i * SOAK_TICK_MS;
     const hours = (tMs - warmupEndMs) / 3_600_000;
     return samplerLines(
